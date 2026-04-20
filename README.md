@@ -1,130 +1,130 @@
-# Gemma Chat
+<p align="center">
+  <img src="gemma-extruded-app.png" alt="Gemma Chat" width="180" />
+</p>
 
-A local AI assistant for Apple Silicon Macs — powered by Google's Gemma 4, running entirely on your machine via [MLX](https://github.com/ml-explore/mlx). No account, no cloud, no data leaves your Mac.
+<h1 align="center">Gemma Chat</h1>
 
-Chat with it, or switch into **Build mode** and have it write code for you with a live preview canvas.
+<p align="center">
+  <strong>Vibe code without the internet.</strong><br/>
+  A local coding agent powered by Google's Gemma 4 — runs entirely on your Mac via Apple's MLX framework.<br/>
+  No API keys. No cloud. No Wi-Fi required.
+</p>
 
-![Gemma Chat](Gemma-app-icon.png)
+---
+
+## The Idea
+
+What if you could vibe code from an airplane? Or a cabin with no cell signal? Or just... without sending your code to someone else's server?
+
+**Gemma Chat** is an open-source Electron app that runs Gemma 4 natively on Apple Silicon. You describe what you want to build, and it writes the code — HTML, CSS, JavaScript, multi-file projects — with a live preview that updates as the model types. No internet connection needed after the initial model download.
+
+It's a proof-of-concept for **fully offline, local-first vibe coding** using a small open model. The model is ~3 GB. The whole thing runs on your laptop.
+
+## How It Works
+
+1. **Describe what you want to build** — "A retro calculator app" or "A landing page for a coffee shop"
+2. **Watch it code** — Gemma writes files character-by-character with a live preview
+3. **Iterate** — Ask for changes, it edits the files and the preview updates in real-time
+
+Everything happens locally. The model runs via [MLX-LM](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm), Apple's framework for running LLMs on Apple Silicon. Your code, your prompts, your conversations — all on your machine.
 
 ## Features
 
-- 🧠 **Local Gemma 4** via [MLX-LM](https://github.com/ml-explore/mlx-examples/tree/main/llms/mlx_lm) — optimized for Apple Silicon
-- 🔄 **Model switching** — swap between e2b (1.5 GB), e4b (3 GB), 27B MoE (8 GB), and 31B (18 GB) on the fly
-- 🛠 **Build mode** — coding agent that writes multi-file projects into a workspace and renders a live preview
-- 🪄 **Live code streaming** — watch Gemma type files character-by-character with a blinking cursor
-- 🌐 **Tool use** — web search (DuckDuckGo), fetch URL, calculator, filesystem, bash
-- 🎤 **Local speech-to-text** via in-browser Whisper ([transformers.js](https://github.com/huggingface/transformers.js))
-- 💾 **Zero-install first run** — Python venv + MLX runtime auto-provisions on first launch
-- ✨ **Premium UI** — smooth animations, 3D Gemma branding, dark mode throughout
+- 🛠 **Build Mode** — Coding agent with a live preview canvas. Writes multi-file projects into a sandboxed workspace.
+- 💬 **Chat Mode** — Conversational AI with tool use (web search, URL fetch, calculator, bash).
+- 🔄 **Model Switching** — Hot-swap between 4 Gemma variants on the fly.
+- 🎤 **Voice Input** — Local speech-to-text via in-browser Whisper.
+- ✈️ **Works Offline** — After the one-time model download, everything runs without internet.
+- 💾 **Zero Config** — Python venv + MLX runtime auto-provisions on first launch.
 
-## Tech Stack
+## Available Models
 
-- **Electron** + **Vite** + **React 19** + **TypeScript** + **Tailwind**
-- **MLX-LM** as the model runtime (auto-installed into a local venv)
-- **transformers.js** (`onnx-community/whisper-base.en`) for STT, WebGPU with WASM fallback
-- Per-conversation workspaces served by a local HTTP server; previewed in an `<iframe>`
+| Model | Size | Best For |
+|---|---|---|
+| Gemma 4 E2B | ~1.5 GB | Fast Q&A, simple tasks |
+| **Gemma 4 E4B** | **~3 GB** | **Recommended.** Speed + capability balance |
+| Gemma 4 27B MoE | ~8 GB | Stronger reasoning (needs 16 GB+ RAM) |
+| Gemma 4 31B | ~18 GB | Maximum quality (needs 32 GB+ RAM) |
 
 ## Getting Started
 
-**Prerequisites:** macOS (Apple Silicon), Python 3.10–3.13, Node 20+.
+**Requirements:** macOS on Apple Silicon, Python 3.10–3.13, Node 20+.
 
 ```bash
+git clone https://github.com/ammaarreshi/gemma-chat-public.git
+cd gemma-chat-public
 npm install
 npm run dev
 ```
 
-On first launch the app will:
-1. Detect Python 3.10–3.13 on your system (Homebrew recommended: `brew install python@3.13`).
-2. Create a virtual environment at `~/Library/Application Support/gemma-chat/mlx/venv/`.
-3. Install `mlx-lm` and dependencies into the venv.
-4. Start the MLX-LM server on `127.0.0.1:11434`.
-5. Download the model you picked (default: Gemma 4 E4B, ~3 GB) from Hugging Face.
-6. Drop you straight into the chat.
+First launch will auto-detect Python → create a venv → install MLX-LM → download the model (~3 GB) → ready to vibe code.
 
-Model weights are cached in `~/Library/Application Support/gemma-chat/models/`.
+> **Tip:** Install Python via Homebrew if you don't have it: `brew install python@3.13`
 
-## Available Models
+### Building a Distributable
 
-| Model | Size | Description |
-|---|---|---|
-| Gemma 4 E2B | 1.5 GB | Fastest. Great for simple Q&A and quick tasks. |
-| Gemma 4 E4B | 3 GB | **Recommended.** Best balance of speed and capability. |
-| Gemma 4 27B MoE | 8 GB | Larger MoE model. Stronger reasoning, slower. |
-| Gemma 4 31B | 18 GB | Full 31B. Maximum quality, needs 32 GB+ RAM. |
+```bash
+npm run dist
+```
 
-Switch models anytime from the model picker in the top-right corner of the chat header.
+Produces a signed `.dmg` in `dist/`. Share it directly — recipients just drag to Applications.
 
-## Scripts
+## Tech Stack
 
-| Script | What it does |
+| Layer | Tech |
 |---|---|
-| `npm run dev` | Run the Electron app with Vite HMR. |
-| `npm run build` | Type-check + build main/preload/renderer bundles. |
-| `npm run dist` | Build a signed `.dmg` via electron-builder. |
-| `npm run typecheck` | Run TypeScript across main and web projects. |
+| App Shell | Electron + Vite + React 19 + TypeScript + Tailwind |
+| Model Runtime | MLX-LM (auto-installed into a local venv) |
+| Speech-to-Text | transformers.js (Whisper, runs in-browser via WASM) |
+| Workspace | Per-conversation sandboxed filesystem + local HTTP server |
 
 ## Architecture
 
 ```
 src/
 ├── main/              Electron main process
-│   ├── index.ts       Window + IPC handlers + agent loop
-│   ├── mlx.ts         MLX-LM install/start/stop/chat + progress parsing
+│   ├── index.ts       Window + IPC + agent loop
+│   ├── mlx.ts         MLX-LM venv install / server lifecycle / chat streaming
 │   ├── workspace.ts   Per-conversation workspace + static file server
 │   └── tools.ts       Tool definitions + system prompts + XML action parser
 ├── preload/           contextBridge API surface
 ├── renderer/src/
 │   ├── components/
-│   │   ├── Setup.tsx      First-run onboarding + model picker + download progress
-│   │   ├── Chat.tsx       Main chat layout + model switcher dropdown
-│   │   ├── Sidebar.tsx    Conversation list
-│   │   ├── Message.tsx    Assistant / user bubbles + tool cards + activity bar
+│   │   ├── Setup.tsx      First-run onboarding + download progress
+│   │   ├── Chat.tsx       Main layout + model switcher
+│   │   ├── Canvas.tsx     Preview / Code / Files tabs (Build mode)
+│   │   ├── Message.tsx    Chat bubbles + tool cards + activity bar
 │   │   ├── Composer.tsx   Input + mic button
-│   │   └── Canvas.tsx     Preview / Code / Files tabs for Build mode
+│   │   └── Sidebar.tsx    Conversation list
 │   └── lib/whisper.ts     Browser Whisper pipeline
-└── shared/types.ts    IPC + message types + model registry
+└── shared/types.ts    IPC types + model registry
 ```
 
-### MLX Runtime
+### Under the Hood
 
-The app manages its own Python virtual environment. On first launch it:
-1. Finds a compatible Python (3.10–3.13) via Homebrew or system paths.
-2. Creates a venv with pip forced to use public PyPI (bypasses corporate registries).
-3. Installs `mlx-lm` which pulls in MLX, transformers, and safetensors.
-4. Spawns `mlx_lm.server` as a child process serving an OpenAI-compatible API.
+**Agent Loop** — In Build mode, each assistant turn streams tokens from the local MLX server. XML `<action>` blocks are parsed from the stream, executed (file writes, bash commands, etc.), and results are fed back for the next turn. Up to 40 rounds per user message.
 
-Model downloads from Hugging Face are tracked via stderr parsing, with progress surfaced to the UI in real-time.
+**Live Streaming** — As the model generates file content, partial writes are flushed to disk every ~450ms. The preview iframe reloads in real-time so you watch the page build itself.
 
-### Agent Loop
+**Tool Protocol** — Small models handle XML more reliably than JSON function calling, so tools are invoked via an XML-based format:
 
-In Build mode, each assistant turn streams from the MLX server; any `<action name="…">…</action>` blocks are parsed out of the stream, executed, and their results are threaded back into the next turn. The loop runs up to 40 rounds per user message.
-
-### Tool Protocol
-
-Small models struggle with nested JSON escaping, so tools are invoked via an XML-ish block:
-
-```
+```xml
 <action name="write_file">
 <path>index.html</path>
 <content>
 <!doctype html>
-…
+...
 </content>
 </action>
 ```
-
-`<content>` is parsed greedily to the **last** `</content>` so file bodies can contain nearly anything. Defensive post-processing strips stray ``` fences the model sometimes emits.
-
-### Live Code Streaming
-
-As Gemma streams into a `<content>` block, the main process throttle-writes partial file content to disk every ~450ms. The Canvas's **Code** tab renders that content with line numbers and a blinking cursor; the **Preview** tab's iframe reloads every ~350ms (debounced) so pages build in front of you.
 
 ## Credits
 
 - [Gemma](https://ai.google.dev/gemma) by Google DeepMind
 - [MLX](https://github.com/ml-explore/mlx) by Apple Machine Learning Research
-- [Hugging Face transformers.js](https://github.com/huggingface/transformers.js) + [onnx-community](https://huggingface.co/onnx-community) for local Whisper
-- Agent-harness patterns adapted from [google-ai-edge/gallery](https://github.com/google-ai-edge/gallery)
+- [transformers.js](https://github.com/huggingface/transformers.js) by Hugging Face
+
+Created by [@ammaar](https://x.com/ammaar)
 
 ## License
 
