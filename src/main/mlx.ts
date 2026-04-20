@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { spawn, ChildProcess, spawnSync } from 'child_process'
 import { join } from 'path'
-import { existsSync } from 'fs'
+import { existsSync, rmSync } from 'fs'
 
 const MLX_PORT = 11434
 const MLX_HOST = `127.0.0.1:${MLX_PORT}`
@@ -78,9 +78,11 @@ function findSystemPython(): string | null {
         const ver = s.stdout.toString().trim() // e.g. "Python 3.13.2"
         const match = ver.match(/Python 3\.(\d+)/)
         const minor = match ? parseInt(match[1], 10) : 99
-        if (minor <= 13) {
+        if (minor >= 10 && minor <= 13) {
           console.log(`[mlx] Found compatible Python: ${c} (${ver})`)
           return c
+        } else if (minor < 10) {
+          console.log(`[mlx] Skipping ${c} — ${ver} is too old (need 3.10+)`)
         } else {
           console.log(`[mlx] Skipping ${c} — ${ver} is too new for mlx-lm`)
         }
@@ -112,21 +114,42 @@ export function locateMLX(): MLXStatus | null {
   // 1. Check if we have a working venv with mlx_lm installed
   const vPy = venvPython()
   if (existsSync(vPy)) {
+    // Verify the venv Python is 3.10+ — older versions can't run modern mlx-lm
     try {
-      const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
-        timeout: 15000,
+      const verCheck = spawnSync(vPy, ['--version'], {
+        timeout: 5000,
         stdio: ['ignore', 'pipe', 'pipe']
       })
-      const stdout = check.stdout?.toString().trim() || ''
-      if (check.status === 0 && stdout.includes('ok')) {
-        console.log('[mlx] Found mlx-lm in venv')
-        return { python: vPy, installed: true }
+      const verStr = verCheck.stdout?.toString().trim() || ''
+      const verMatch = verStr.match(/Python 3\.(\d+)/)
+      const minor = verMatch ? parseInt(verMatch[1], 10) : 0
+      if (minor < 10) {
+        console.log(`[mlx] Existing venv uses ${verStr} (too old). Deleting and recreating…`)
+        try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
+        // Fall through to system python detection below
+      } else {
+        // Venv Python is compatible — check if mlx_lm is installed
+        try {
+          const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
+            timeout: 15000,
+            stdio: ['ignore', 'pipe', 'pipe']
+          })
+          const stdout = check.stdout?.toString().trim() || ''
+          if (check.status === 0 && stdout.includes('ok')) {
+            console.log('[mlx] Found mlx-lm in venv')
+            return { python: vPy, installed: true }
+          }
+        } catch {
+          // venv exists but mlx_lm not importable
+        }
+        // Venv exists but mlx_lm is missing — can still pip install into it
+        return { python: vPy, installed: false }
       }
     } catch {
-      // venv exists but mlx_lm not importable
+      // Can't check version — treat as needing recreation
+      console.log('[mlx] Cannot determine venv Python version. Recreating…')
+      try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
     }
-    // Venv exists but mlx_lm is missing — can still pip install into it
-    return { python: vPy, installed: false }
   }
 
   // 2. No venv yet — find a compatible system python so we can create one
@@ -179,7 +202,7 @@ export async function installMLX(
   // Step 3: Install mlx-lm (force public PyPI to bypass corporate registries)
   onProgress({ stage: 'install', message: 'Installing mlx-lm (this may take a few minutes)…' })
   await runProcess(vPy, [
-    '-m', 'pip', 'install', '--upgrade', 'mlx-lm',
+    '-m', 'pip', 'install', '--upgrade', 'mlx-lm>=0.24.0',
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
