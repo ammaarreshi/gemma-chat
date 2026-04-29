@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_MODEL, type SetupStatus } from '@shared/types'
+import {
+  AVAILABLE_MODELS,
+  DEFAULT_MODEL,
+  OLLAMA_MODEL_PREFIX,
+  runtimeModelName,
+  type ModelInfo,
+  type SetupStatus
+} from '@shared/types'
 import Setup from './components/Setup'
 import Chat from './components/Chat'
 
@@ -11,6 +18,7 @@ type AppState =
 
 export default function App() {
   const [state, setState] = useState<AppState>({ phase: 'boot' })
+  const [models, setModels] = useState<ModelInfo[]>(AVAILABLE_MODELS)
 
   useEffect(() => {
     // Forward raw Gemma output to devtools console for debugging
@@ -45,6 +53,7 @@ export default function App() {
       })
 
       const local = await window.api.listLocalModels()
+      setModels(mergeLocalModels(local))
       const hasDefault = local.some(
         (m) => m === DEFAULT_MODEL || m.startsWith(DEFAULT_MODEL + ':')
       )
@@ -93,7 +102,8 @@ export default function App() {
   if (state.phase === 'setup') {
     return (
       <div key="setup" className="anim-fade-in h-full w-full">
-        <Setup
+          <Setup
+          models={models}
           status={state.status}
           model={state.model}
           onModelChange={(m) =>
@@ -115,7 +125,7 @@ export default function App() {
   if (state.phase === 'switching') {
     return (
       <div key="switching" className="anim-fade-in h-full w-full">
-        <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+        <Chat model={state.model} models={models} onSwitchModel={handleSwitchModel} />
         <SwitchingOverlay status={state.status} />
       </div>
     )
@@ -123,9 +133,28 @@ export default function App() {
 
   return (
     <div key="chat" className="anim-fade-scale h-full w-full">
-      <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+      <Chat model={state.model} models={models} onSwitchModel={handleSwitchModel} />
     </div>
   )
+}
+
+function mergeLocalModels(local: string[]): ModelInfo[] {
+  const seen = new Set(AVAILABLE_MODELS.map((m) => m.name))
+  const extra = local
+    .filter((model) => model.startsWith(OLLAMA_MODEL_PREFIX) && !seen.has(model))
+    .map((model): ModelInfo => {
+      const name = runtimeModelName(model)
+      return {
+        provider: 'ollama',
+        name: model,
+        label: name,
+        size: 'Ollama',
+        sizeBytes: 0,
+        description: `Local Ollama model. Requires Ollama running with ${name} installed.`
+      }
+    })
+
+  return [...AVAILABLE_MODELS, ...extra]
 }
 
 function BootSplash() {

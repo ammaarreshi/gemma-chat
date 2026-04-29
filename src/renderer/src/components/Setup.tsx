@@ -1,7 +1,8 @@
-import { AVAILABLE_MODELS, type SetupStatus } from '@shared/types'
+import { modelProvider, runtimeModelName, type ModelInfo, type SetupStatus } from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 
 interface Props {
+  models: ModelInfo[]
   status: SetupStatus
   model: string
   onModelChange: (m: string) => void
@@ -20,15 +21,23 @@ function formatBytes(n?: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-export default function Setup({ status, model, onModelChange, onStart }: Props) {
+export default function Setup({ models, status, model, onModelChange, onStart }: Props) {
   const isWorking =
     status.stage === 'checking' ||
     status.stage === 'installing-mlx' ||
     status.stage === 'starting-mlx' ||
+    status.stage === 'connecting-ollama' ||
     status.stage === 'downloading-model'
 
   if (status.stage === 'checking' && status.message === 'Welcome') {
-    return <WelcomeScreen model={model} onModelChange={onModelChange} onStart={onStart} />
+    return (
+      <WelcomeScreen
+        models={models}
+        model={model}
+        onModelChange={onModelChange}
+        onStart={onStart}
+      />
+    )
   }
 
   return (
@@ -85,14 +94,25 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
 
 function WelcomeScreen({
   model,
+  models,
   onModelChange,
   onStart
 }: {
   model: string
+  models: ModelInfo[]
   onModelChange: (m: string) => void
   onStart: (model: string) => void
 }) {
-  const selected = AVAILABLE_MODELS.find((m) => m.name === model) ?? AVAILABLE_MODELS[1]
+  const selected = models.find((m) => m.name === model) ?? models[1] ?? models[0]
+  const selectedProvider = modelProvider(selected.name)
+  const actionLabel =
+    selectedProvider === 'ollama'
+      ? `Use ${selected.label}`
+      : `Download ${selected.label}  ·  ${selected.size}`
+  const helperText =
+    selectedProvider === 'ollama'
+      ? `Requires Ollama running locally with ${runtimeModelName(selected.name)} installed.`
+      : "We'll install MLX runtime if needed. Model weights are cached locally."
   return (
     <div className="drag flex h-full w-full flex-col">
       <div className="h-9" />
@@ -112,7 +132,7 @@ function WelcomeScreen({
             Pick a model
           </div>
           <div className="anim-stagger space-y-2">
-            {AVAILABLE_MODELS.map((m) => (
+            {models.map((m) => (
               <button
                 key={m.name}
                 onClick={() => onModelChange(m.name)}
@@ -130,6 +150,11 @@ function WelcomeScreen({
                         Recommended
                       </span>
                     )}
+                    {m.provider === 'ollama' && (
+                      <span className="rounded-full bg-emerald-400/10 px-2 py-[1px] text-[10px] font-medium uppercase tracking-wider text-emerald-200">
+                        Ollama
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs tabular-nums text-ink-400">{m.size}</span>
                 </div>
@@ -144,10 +169,10 @@ function WelcomeScreen({
             onClick={() => onStart(selected.name)}
             className="mt-6 w-full rounded-xl bg-white py-3 text-sm font-medium text-ink-900 transition hover:bg-white/90 active:scale-[0.99]"
           >
-            Download {selected.label} &nbsp;·&nbsp; {selected.size}
+            {actionLabel}
           </button>
           <p className="mt-3 text-center text-[11px] text-ink-400">
-            We'll install MLX runtime if needed. Model weights are cached locally.
+            {helperText}
           </p>
         </div>
       </div>
@@ -156,10 +181,23 @@ function WelcomeScreen({
 }
 
 function StageList({ status }: { status: SetupStatus }) {
+  if (status.stage === 'connecting-ollama') {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <StageDot state="active" />
+          <div className="flex-1">
+            <div className="text-sm text-white">{status.message}</div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const stages: Array<{ key: SetupStatus['stage']; label: string }> = [
     { key: 'installing-mlx', label: 'Install MLX runtime' },
-    { key: 'starting-mlx', label: 'Start runtime & load model' },
-    { key: 'downloading-model', label: 'Download model' },
+    { key: 'starting-mlx', label: 'Start runtime' },
+    { key: 'downloading-model', label: 'Load model' },
     { key: 'ready', label: 'Ready to chat' }
   ]
   const order: SetupStatus['stage'][] = [
