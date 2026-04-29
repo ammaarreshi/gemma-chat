@@ -111,7 +111,7 @@ export interface MLXStatus {
  * Returns the python path to use and whether mlx_lm is installed.
  */
 export function locateMLX(): MLXStatus | null {
-  // 1. Check if we have a working venv with mlx_lm installed
+  // 1. Check if we have a working venv with mlx_lm and mlx_vlm installed
   const vPy = venvPython()
   if (existsSync(vPy)) {
     // Verify the venv Python is 3.10+ — older versions can't run modern mlx-lm
@@ -128,21 +128,21 @@ export function locateMLX(): MLXStatus | null {
         try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
         // Fall through to system python detection below
       } else {
-        // Venv Python is compatible — check if mlx_lm is installed
+        // Venv Python is compatible — check if libraries are installed
         try {
-          const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
+          const check = spawnSync(vPy, ['-c', 'import mlx_lm, mlx_vlm; print("ok")'], {
             timeout: 15000,
             stdio: ['ignore', 'pipe', 'pipe']
           })
           const stdout = check.stdout?.toString().trim() || ''
           if (check.status === 0 && stdout.includes('ok')) {
-            console.log('[mlx] Found mlx-lm in venv')
+            console.log('[mlx] Found MLX libraries in venv')
             return { python: vPy, installed: true }
           }
         } catch {
-          // venv exists but mlx_lm not importable
+          // venv exists but libraries not importable
         }
-        // Venv exists but mlx_lm is missing — can still pip install into it
+        // Venv exists but libraries are missing — can still pip install into it
         return { python: vPy, installed: false }
       }
     } catch {
@@ -168,7 +168,7 @@ export type InstallProgress = {
 }
 
 /**
- * Install mlx-lm into a dedicated virtual environment.
+ * Install mlx-lm and mlx-vlm into a dedicated virtual environment.
  * Uses --index-url to bypass any corporate pip registries.
  * Returns the venv python path to use for all subsequent operations.
  */
@@ -199,24 +199,24 @@ export async function installMLX(
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
-  // Step 3: Install mlx-lm (force public PyPI to bypass corporate registries)
-  onProgress({ stage: 'install', message: 'Installing mlx-lm (this may take a few minutes)…' })
+  // Step 3: Install mlx-lm and mlx-vlm (force public PyPI to bypass corporate registries)
+  onProgress({ stage: 'install', message: 'Installing MLX libraries (this may take a few minutes)…' })
   await runProcess(vPy, [
-    '-m', 'pip', 'install', '--upgrade', 'mlx-lm>=0.24.0',
+    '-m', 'pip', 'install', '--upgrade', 'mlx-lm>=0.31.0', 'mlx-vlm>=0.4.0',
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
   // Verify the install worked
-  const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
+  const check = spawnSync(vPy, ['-c', 'import mlx_lm, mlx_vlm; print("ok")'], {
     timeout: 15000,
     stdio: ['ignore', 'pipe', 'pipe']
   })
   if (check.status !== 0 || !check.stdout?.toString().includes('ok')) {
     const err = check.stderr?.toString().slice(-300) || 'unknown error'
-    throw new Error(`mlx-lm installed but failed to import: ${err}`)
+    throw new Error(`MLX libraries installed but failed to import: ${err}`)
   }
 
-  console.log('[mlx] mlx-lm installed successfully')
+  console.log('[mlx] MLX libraries installed successfully')
   return vPy
 }
 
@@ -288,11 +288,13 @@ export async function startServer(
   let earlyExit: { code: number | null; stderr: string } | null = null
   let stderrBuf = ''
 
-  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${MLX_PORT}`)
+  // Use mlx_vlm for Gemma 4 models (they are multi-modal)
+  const serverModule = model.includes('gemma-4') ? 'mlx_vlm.server' : 'mlx_lm.server'
+  console.log(`[mlx] Starting server: ${python} -m ${serverModule} --model ${model} --port ${MLX_PORT}`)
 
   serverProc = spawn(
     python,
-    ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)],
+    ['-m', serverModule, '--model', model, '--port', String(MLX_PORT)],
     {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -326,7 +328,7 @@ export async function startServer(
         }
 
         // Match loading messages
-        if (line.includes('Starting httpd') || line.includes('starting')) {
+        if (line.includes('Starting httpd') || line.includes('starting') || line.includes('Started server process')) {
           onProgress({ message: 'Starting server…', progress: 1.0 })
         }
       }
@@ -436,10 +438,16 @@ export async function* chatStream(
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       model: opts.model,
-      messages: opts.messages.map((m) => ({
-        role: m.role,
-        content: m.content
-      })),
+      messages: opts.messages.map((m) => {
+        if (m.images && m.images.length > 0) {
+          const content: any[] = [{ type: 'text', text: m.content }]
+          for (const img of m.images) {
+            content.push({ type: 'image_url', image_url: { url: img } })
+          }
+          return { role: m.role, content }
+        }
+        return { role: m.role, content: m.content }
+      }),
       stream: true,
       temperature: opts.temperature ?? 0.7,
       max_tokens: 8192
