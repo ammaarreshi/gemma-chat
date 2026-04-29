@@ -31,6 +31,54 @@ function modelsDir(): string {
   return join(dataDir(), 'models')
 }
 
+type CommandInvocation = {
+  cmd: string
+  args: string[]
+}
+
+const arm64PythonSupport = new Map<string, boolean>()
+
+function canRunArm64Python(python: string): boolean {
+  if (process.platform !== 'darwin' || !existsSync('/usr/bin/arch')) return false
+
+  const cached = arm64PythonSupport.get(python)
+  if (cached != null) return cached
+
+  try {
+    const check = spawnSync('/usr/bin/arch', [
+      '-arm64',
+      python,
+      '-c',
+      'import platform; print(platform.machine())'
+    ], {
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    const ok = check.status === 0 && check.stdout?.toString().trim() === 'arm64'
+    arm64PythonSupport.set(python, ok)
+    return ok
+  } catch {
+    arm64PythonSupport.set(python, false)
+    return false
+  }
+}
+
+function pythonInvocation(python: string, args: string[]): CommandInvocation {
+  if (canRunArm64Python(python)) {
+    return { cmd: '/usr/bin/arch', args: ['-arm64', python, ...args] }
+  }
+  return { cmd: python, args }
+}
+
+function spawnPythonSync(
+  python: string,
+  args: string[],
+  options: Parameters<typeof spawnSync>[2]
+): ReturnType<typeof spawnSync> {
+  const invocation = pythonInvocation(python, args)
+  return spawnSync(invocation.cmd, invocation.args, options)
+}
+
 // ---------------------------------------------------------------------------
 // System Python detection
 // ---------------------------------------------------------------------------
@@ -59,7 +107,7 @@ function findSystemPython(): string | null {
 
   for (const c of versionedCandidates) {
     try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
+      const s = spawnPythonSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
       if (s.status === 0) {
         console.log(`[mlx] Found compatible Python: ${c} (${s.stdout.toString().trim()})`)
         return c
@@ -73,7 +121,7 @@ function findSystemPython(): string | null {
   const fallbacks = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3']
   for (const c of fallbacks) {
     try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
+      const s = spawnPythonSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
       if (s.status === 0) {
         const ver = s.stdout.toString().trim() // e.g. "Python 3.13.2"
         const match = ver.match(/Python 3\.(\d+)/)
@@ -116,7 +164,7 @@ export function locateMLX(): MLXStatus | null {
   if (existsSync(vPy)) {
     // Verify the venv Python is 3.10+ — older versions can't run modern mlx-lm
     try {
-      const verCheck = spawnSync(vPy, ['--version'], {
+      const verCheck = spawnPythonSync(vPy, ['--version'], {
         timeout: 5000,
         stdio: ['ignore', 'pipe', 'pipe']
       })
@@ -130,7 +178,7 @@ export function locateMLX(): MLXStatus | null {
       } else {
         // Venv Python is compatible — check if mlx_lm is installed
         try {
-          const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
+          const check = spawnPythonSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
             timeout: 15000,
             stdio: ['ignore', 'pipe', 'pipe']
           })
@@ -189,25 +237,25 @@ export async function installMLX(
   if (!existsSync(vPy)) {
     onProgress({ stage: 'install', message: 'Creating Python virtual environment…' })
     console.log(`[mlx] Creating venv at ${vDir} using ${sysPython}`)
-    await runProcess(sysPython, ['-m', 'venv', vDir], onProgress)
+    await runPythonProcess(sysPython, ['-m', 'venv', vDir], onProgress)
   }
 
   // Step 2: Upgrade pip first (avoids old-pip issues)
   onProgress({ stage: 'install', message: 'Upgrading pip…' })
-  await runProcess(vPy, [
+  await runPythonProcess(vPy, [
     '-m', 'pip', 'install', '--upgrade', 'pip',
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
   // Step 3: Install mlx-lm (force public PyPI to bypass corporate registries)
   onProgress({ stage: 'install', message: 'Installing mlx-lm (this may take a few minutes)…' })
-  await runProcess(vPy, [
+  await runPythonProcess(vPy, [
     '-m', 'pip', 'install', '--upgrade', 'mlx-lm>=0.24.0',
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
   // Verify the install worked
-  const check = spawnSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
+  const check = spawnPythonSync(vPy, ['-c', 'import mlx_lm; print("ok")'], {
     timeout: 15000,
     stdio: ['ignore', 'pipe', 'pipe']
   })
@@ -218,6 +266,15 @@ export async function installMLX(
 
   console.log('[mlx] mlx-lm installed successfully')
   return vPy
+}
+
+function runPythonProcess(
+  python: string,
+  args: string[],
+  onProgress: (p: InstallProgress) => void
+): Promise<void> {
+  const invocation = pythonInvocation(python, args)
+  return runProcess(invocation.cmd, invocation.args, onProgress)
 }
 
 /** Run a subprocess and stream output to onProgress */
@@ -288,11 +345,15 @@ export async function startServer(
   let earlyExit: { code: number | null; stderr: string } | null = null
   let stderrBuf = ''
 
-  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${MLX_PORT}`)
+  const invocation = pythonInvocation(python, [
+    '-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)
+  ])
+
+  console.log(`[mlx] Starting server: ${invocation.cmd} ${invocation.args.join(' ')}`)
 
   serverProc = spawn(
-    python,
-    ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)],
+    invocation.cmd,
+    invocation.args,
     {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
