@@ -54,8 +54,8 @@ Everything happens locally. The model runs via [MLX-LM](https://github.com/ml-ex
 **Requirements:** macOS on Apple Silicon, Python 3.10–3.13, Node 20+.
 
 ```bash
-git clone https://github.com/ammaarreshi/gemma-chat-public.git
-cd gemma-chat-public
+git clone https://github.com/ammaarreshi/gemma-chat.git
+cd gemma-chat
 npm install
 npm run dev
 ```
