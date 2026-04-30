@@ -11,6 +11,8 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --dir",
+    "pack:win": "electron-vite build && electron-builder --win --dir --publish never",
+    "dist:win": "electron-vite build && electron-builder --win nsis --x64 --publish never",
     "dist": "electron-vite build && electron-builder",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",

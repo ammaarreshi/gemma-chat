@@ -1,8 +1,8 @@
 import { app } from 'electron'
 import { createServer, type Server } from 'http'
-import { createReadStream } from 'fs'
+import { createReadStream, existsSync } from 'fs'
 import { mkdir, readFile, writeFile, readdir, stat, access, rm, rename } from 'fs/promises'
-import { join, resolve, dirname, extname, relative, sep } from 'path'
+import { join, resolve, dirname, extname, relative, sep, delimiter } from 'path'
 import { spawn } from 'child_process'
 
 let server: Server | null = null
@@ -330,6 +330,40 @@ export interface BashResult {
 const BASH_DENY =
   /\b(rm\s+-rf\s+\/|sudo|:\(\)\s*\{|chmod\s+777\s+\/|mkfs|dd\s+if=|shutdown|reboot)/i
 
+let bashPathCache: string | null = null
+
+function findOnPath(command: string): string | null {
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue
+    const candidate = join(dir, command)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+function resolveBash(): string {
+  if (bashPathCache) return bashPathCache
+  if (process.platform !== 'win32') {
+    bashPathCache = '/bin/bash'
+    return bashPathCache
+  }
+
+  const candidates = [
+    process.env.GIT_BASH,
+    join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'bin', 'bash.exe'),
+    join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Git', 'bin', 'bash.exe'),
+    findOnPath('bash.exe'),
+    findOnPath('bash')
+  ].filter((candidate): candidate is string => !!candidate)
+
+  const found = candidates.find((candidate) => existsSync(candidate))
+  if (!found) {
+    throw new Error('Bash is required for run_bash. Install Git for Windows or add bash.exe to PATH.')
+  }
+  bashPathCache = found
+  return bashPathCache
+}
+
 export async function wsRunBash(
   conversationId: string,
   command: string,
@@ -343,7 +377,7 @@ export async function wsRunBash(
   const start = Date.now()
 
   return new Promise((resolve) => {
-    const proc = spawn('/bin/bash', ['-lc', command], {
+    const proc = spawn(resolveBash(), ['-lc', command], {
       cwd: base,
       env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' }
     })

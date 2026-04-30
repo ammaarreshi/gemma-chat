@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AVAILABLE_MODELS, type AgentMode, type ChatMessage, type ToolCall, type StreamChunk } from '@shared/types'
+import {
+  type AgentMode,
+  type ChatMessage,
+  type ModelInfo,
+  type ToolCall,
+  type StreamChunk
+} from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 import Composer from './Composer'
 import Message from './Message'
@@ -8,6 +14,7 @@ import Canvas from './Canvas'
 
 interface Props {
   model: string
+  models: ModelInfo[]
   onSwitchModel: (model: string) => void
 }
 
@@ -56,7 +63,7 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export default function Chat({ model, onSwitchModel }: Props) {
+export default function Chat({ model, models, onSwitchModel }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations()
     return loaded.length ? loaded : [newConversation()]
@@ -240,6 +247,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
             model={model}
+            models={models}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
             onToggleMode={toggleMode}
@@ -334,6 +342,7 @@ function ResizableCanvas({
 
 function Header({
   model,
+  models,
   mode,
   canvasOpen,
   onToggleMode,
@@ -341,6 +350,7 @@ function Header({
   onSwitchModel
 }: {
   model: string
+  models: ModelInfo[]
   mode: AgentMode
   canvasOpen: boolean
   onToggleMode: () => void
@@ -362,7 +372,7 @@ function Header({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [pickerOpen])
 
-  const currentLabel = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const currentLabel = models.find((m) => m.name === model)?.label ?? model
 
   return (
     <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
@@ -392,7 +402,7 @@ function Header({
               <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
                 Switch model
               </div>
-              {AVAILABLE_MODELS.map((m) => (
+              {models.map((m) => (
                 <button
                   key={m.name}
                   onClick={() => {
@@ -408,6 +418,11 @@ function Header({
                   <div>
                     <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
                       {m.label}
+                      {m.provider === 'ollama' && (
+                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                          ollama
+                        </span>
+                      )}
                       {m.recommended && (
                         <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
                           rec
@@ -560,7 +575,7 @@ function EmptyState({ mode }: { mode: AgentMode }) {
         <div className="text-sm text-ink-400">
           {mode === 'code'
             ? 'Gemma will write files into a workspace and show a live preview on the right.'
-            : 'Running locally. Your messages never leave your Mac.'}
+            : 'Running locally. Your messages never leave your machine.'}
         </div>
       </div>
       <div className="anim-stagger grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">

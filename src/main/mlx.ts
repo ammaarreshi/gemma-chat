@@ -3,7 +3,7 @@ import { spawn, ChildProcess, spawnSync } from 'child_process'
 import { join } from 'path'
 import { existsSync, rmSync } from 'fs'
 
-const MLX_PORT = 11434
+const MLX_PORT = 11534
 const MLX_HOST = `127.0.0.1:${MLX_PORT}`
 const MLX_URL = `http://${MLX_HOST}`
 
@@ -431,21 +431,26 @@ export interface MLXChatOptions {
 export async function* chatStream(
   opts: MLXChatOptions
 ): AsyncGenerator<{ content?: string; done?: boolean }> {
-  const res = await fetch(`${MLX_URL}/v1/chat/completions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: opts.model,
-      messages: opts.messages.map((m) => ({
-        role: m.role,
-        content: m.content
-      })),
-      stream: true,
-      temperature: opts.temperature ?? 0.7,
-      max_tokens: 8192
-    }),
-    signal: opts.signal
-  })
+  let res: Response
+  try {
+    res = await fetch(`${MLX_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: opts.model,
+        messages: opts.messages.map((m) => ({
+          role: m.role,
+          content: m.content
+        })),
+        stream: true,
+        temperature: opts.temperature ?? 0.7,
+        max_tokens: 8192
+      }),
+      signal: opts.signal
+    })
+  } catch (e) {
+    throw new Error(`MLX fetch failed at ${MLX_URL}: ${describeFetchError(e)}`)
+  }
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => '')
@@ -479,6 +484,12 @@ export async function* chatStream(
     }
   }
   yield { done: true }
+}
+
+function describeFetchError(e: unknown): string {
+  if (!(e instanceof Error)) return String(e)
+  const cause = e.cause instanceof Error ? ` (${e.cause.message})` : ''
+  return `${e.message}${cause}`
 }
 
 /** Parse an SSE byte stream into individual data payloads */
