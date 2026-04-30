@@ -2,6 +2,7 @@ export type SetupStage =
   | 'checking'
   | 'installing-mlx'
   | 'starting-mlx'
+  | 'connecting-ollama'
   | 'downloading-model'
   | 'ready'
   | 'error'
@@ -78,7 +79,9 @@ export type StreamChunk =
   | { type: 'error'; error: string }
 
 export interface ModelInfo {
-  /** HuggingFace repo ID — used internally for mlx_lm */
+  /** Runtime that serves this model */
+  provider: RuntimeProvider
+  /** Runtime-specific model ID. MLX uses HuggingFace repo IDs; Ollama uses local model tags. */
   name: string
   /** Short, user-friendly display name */
   label: string
@@ -88,8 +91,21 @@ export interface ModelInfo {
   recommended?: boolean
 }
 
+export type RuntimeProvider = 'mlx' | 'ollama'
+
+export const OLLAMA_MODEL_PREFIX = 'ollama:'
+
+export function modelProvider(model: string): RuntimeProvider {
+  return model.startsWith(OLLAMA_MODEL_PREFIX) ? 'ollama' : 'mlx'
+}
+
+export function runtimeModelName(model: string): string {
+  return model.startsWith(OLLAMA_MODEL_PREFIX) ? model.slice(OLLAMA_MODEL_PREFIX.length) : model
+}
+
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
+    provider: 'mlx',
     name: 'mlx-community/gemma-4-e2b-it-4bit',
     label: 'Gemma 4 E2B',
     size: '1.5 GB',
@@ -97,6 +113,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     description: 'Edge-sized. Fast & lightweight. Text + image + audio. Runs on 8GB+ Macs.'
   },
   {
+    provider: 'mlx',
     name: 'mlx-community/gemma-4-e4b-it-4bit',
     label: 'Gemma 4 E4B',
     size: '3 GB',
@@ -105,6 +122,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     recommended: true
   },
   {
+    provider: 'mlx',
     name: 'mlx-community/gemma-4-26b-a4b-it-4bit',
     label: 'Gemma 4 27B MoE',
     size: '16 GB',
@@ -112,13 +130,29 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     description: 'Mixture-of-Experts (26B, 4B active). 16GB+ RAM recommended.'
   },
   {
+    provider: 'mlx',
     name: 'mlx-community/gemma-4-31b-it-4bit',
     label: 'Gemma 4 31B',
     size: '18 GB',
     sizeBytes: 18_000_000_000,
     description: 'Frontier dense model. Best quality. 32GB+ RAM recommended.'
+  },
+  {
+    provider: 'ollama',
+    name: 'ollama:gemma3:4b',
+    label: 'Gemma 3 4B',
+    size: 'Ollama',
+    sizeBytes: 0,
+    description: 'Use a locally pulled Ollama model. Requires Ollama running with gemma3:4b.'
+  },
+  {
+    provider: 'ollama',
+    name: 'ollama:llama3.2',
+    label: 'Llama 3.2',
+    size: 'Ollama',
+    sizeBytes: 0,
+    description: 'Use a locally pulled Ollama model. Requires Ollama running with llama3.2.'
   }
 ]
 
 export const DEFAULT_MODEL = 'mlx-community/gemma-4-e4b-it-4bit'
-

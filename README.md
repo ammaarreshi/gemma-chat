@@ -36,6 +36,7 @@ Everything happens locally. The model runs via [MLX-LM](https://github.com/ml-ex
 - 🛠 **Build Mode** — Coding agent with a live preview canvas. Writes multi-file projects into a sandboxed workspace.
 - 💬 **Chat Mode** — Conversational AI with tool use (web search, URL fetch, calculator, bash).
 - 🔄 **Model Switching** — Hot-swap between 4 Gemma variants on the fly.
+- 🦙 **Ollama Support** — Use locally installed Ollama models alongside the bundled MLX runtime.
 - 🎤 **Voice Input** — Local speech-to-text via in-browser Whisper.
 - ✈️ **Works Offline** — After the one-time model download, everything runs without internet.
 - 💾 **Zero Config** — Python venv + MLX runtime auto-provisions on first launch.
@@ -64,6 +65,16 @@ First launch will auto-detect Python → create a venv → install MLX-LM → do
 
 > **Tip:** Install Python via Homebrew if you don't have it: `brew install python@3.13`
 
+### Using Ollama Models
+
+Gemma Chat can also connect to a local Ollama server. Start Ollama, pull a model, then choose it from the model picker:
+
+```bash
+ollama pull gemma3:4b
+```
+
+The app auto-detects locally installed Ollama models from `http://127.0.0.1:11434`.
+
 ### Building a Distributable
 
 ```bash
@@ -77,7 +88,7 @@ Produces a signed `.dmg` in `dist/`. Share it directly — recipients just drag 
 | Layer | Tech |
 |---|---|
 | App Shell | Electron + Vite + React 19 + TypeScript + Tailwind |
-| Model Runtime | MLX-LM (auto-installed into a local venv) |
+| Model Runtime | MLX-LM (auto-installed into a local venv) + Ollama |
 | Speech-to-Text | transformers.js (Whisper, runs in-browser via WASM) |
 | Workspace | Per-conversation sandboxed filesystem + local HTTP server |
 

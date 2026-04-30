@@ -2,13 +2,19 @@ import { app } from 'electron'
 import { spawn, ChildProcess, spawnSync } from 'child_process'
 import { join } from 'path'
 import { existsSync, rmSync } from 'fs'
+import { createServer } from 'net'
 
-const MLX_PORT = 11434
-const MLX_HOST = `127.0.0.1:${MLX_PORT}`
-const MLX_URL = `http://${MLX_HOST}`
+const MLX_HOST = '127.0.0.1'
+const PREFERRED_MLX_PORT = 11534
+const FALLBACK_MLX_PORTS = Array.from({ length: 11 }, (_, i) => PREFERRED_MLX_PORT + i)
 
 let serverProc: ChildProcess | null = null
 let currentModel: string | null = null
+let currentPort: number | null = null
+
+function mlxUrl(): string | null {
+  return currentPort ? `http://${MLX_HOST}:${currentPort}` : null
+}
 
 // ---------------------------------------------------------------------------
 // Paths — everything lives under <appData>/mlx/
@@ -29,6 +35,40 @@ function venvPython(): string {
 
 function modelsDir(): string {
   return join(dataDir(), 'models')
+}
+
+// ---------------------------------------------------------------------------
+// Port selection
+// ---------------------------------------------------------------------------
+
+function canBind(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer()
+    server.once('error', () => resolve(false))
+    server.once('listening', () => {
+      server.close(() => resolve(true))
+    })
+    server.listen(port, MLX_HOST)
+  })
+}
+
+async function choosePort(): Promise<number> {
+  for (const port of FALLBACK_MLX_PORTS) {
+    if (await canBind(port)) return port
+  }
+
+  return new Promise((resolve, reject) => {
+    const server = createServer()
+    server.once('error', reject)
+    server.once('listening', () => {
+      const address = server.address()
+      server.close(() => {
+        if (address && typeof address === 'object') resolve(address.port)
+        else reject(new Error('Could not select a free MLX server port'))
+      })
+    })
+    server.listen(0, MLX_HOST)
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -275,6 +315,8 @@ export async function startServer(
 
   // Kill existing server if running with different model
   stopServer()
+  const port = await choosePort()
+  const url = `http://${MLX_HOST}:${port}`
 
   const env = {
     ...process.env,
@@ -288,11 +330,11 @@ export async function startServer(
   let earlyExit: { code: number | null; stderr: string } | null = null
   let stderrBuf = ''
 
-  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${MLX_PORT}`)
+  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${port}`)
 
   serverProc = spawn(
     python,
-    ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)],
+    ['-m', 'mlx_lm.server', '--model', model, '--port', String(port)],
     {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -300,6 +342,7 @@ export async function startServer(
     }
   )
   currentModel = model
+  currentPort = port
 
   serverProc.stdout?.on('data', (d) => console.log('[mlx]', d.toString().trim()))
   serverProc.stderr?.on('data', (d) => {
@@ -337,11 +380,12 @@ export async function startServer(
     earlyExit = { code, stderr: stderrBuf }
     serverProc = null
     currentModel = null
+    currentPort = null
   })
 
   // Wait for the server to become healthy.
   // First run downloads model weights from HuggingFace, so allow up to 10 min.
-  await waitForHealth(600_000, () => earlyExit)
+  await waitForHealth(url, 600_000, () => earlyExit)
 }
 
 export function stopServer(): void {
@@ -350,6 +394,7 @@ export function stopServer(): void {
     serverProc.kill('SIGTERM')
     serverProc = null
     currentModel = null
+    currentPort = null
   }
 }
 
@@ -358,6 +403,7 @@ export function stopServer(): void {
  * If the server process exits early, throw immediately.
  */
 async function waitForHealth(
+  url: string,
   timeoutMs: number,
   checkEarlyExit: () => { code: number | null; stderr: string } | null
 ): Promise<void> {
@@ -368,13 +414,16 @@ async function waitForHealth(
     // Check if the server process crashed
     const exit = checkEarlyExit()
     if (exit) {
+      const message = /address already in use|errno 48|eaddrinuse/i.test(exit.stderr)
+        ? `MLX server could not bind its selected port. Another process may have claimed it while Gemma Chat was starting. ${exit.stderr.slice(-500)}`
+        : `MLX server exited with code ${exit.code}. ${exit.stderr.slice(-500)}`
       throw new Error(
-        `MLX server exited with code ${exit.code}. ${exit.stderr.slice(-500)}`
+        message
       )
     }
 
     try {
-      const res = await fetch(`${MLX_URL}/v1/models`)
+      const res = await fetch(`${url}/v1/models`)
       if (res.ok) {
         console.log('[mlx] Server is healthy')
         return
@@ -392,8 +441,11 @@ async function waitForHealth(
 // ---------------------------------------------------------------------------
 
 export async function listLocalModels(): Promise<string[]> {
+  const url = mlxUrl()
+  if (!url) return []
+
   try {
-    const res = await fetch(`${MLX_URL}/v1/models`)
+    const res = await fetch(`${url}/v1/models`)
     if (!res.ok) return []
     const data = (await res.json()) as { data?: Array<{ id: string }> }
     return (data.data ?? []).map((m) => m.id)
@@ -431,7 +483,12 @@ export interface MLXChatOptions {
 export async function* chatStream(
   opts: MLXChatOptions
 ): AsyncGenerator<{ content?: string; done?: boolean }> {
-  const res = await fetch(`${MLX_URL}/v1/chat/completions`, {
+  const url = mlxUrl()
+  if (!url) {
+    throw new Error('MLX server is not running. Start setup before sending a chat message.')
+  }
+
+  const res = await fetch(`${url}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -516,5 +573,3 @@ async function* readSSE(stream: ReadableStream<Uint8Array>): AsyncGenerator<stri
     }
   }
 }
-
-export { MLX_URL }
