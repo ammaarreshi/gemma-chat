@@ -308,7 +308,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
           }
           if (livePath && liveContentStart >= 0) {
             const now = Date.now()
-            if (now - lastLiveWrite > 450) {
+            if (now - lastLiveWrite > 500) {
               lastLiveWrite = now
               writeLivePartial()
             }
@@ -384,6 +384,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
             })
             executedAction = true
             if (livePath) {
+              writeLivePartial()
               send('file:streaming', {
                 conversationId: req.conversationId,
                 path: livePath,
