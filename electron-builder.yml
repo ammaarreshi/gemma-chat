@@ -2,6 +2,7 @@ appId: com.ammaar.gemmachat
 productName: Gemma Chat
 directories:
   buildResources: build
+afterPack: build/afterPack.cjs
 files:
   - '!**/.vscode/*'
   - '!src/*'
