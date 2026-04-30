@@ -41,6 +41,7 @@ import {
 import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
+const appIconPath = join(__dirname, '../../Gemma-app-icon.png')
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -55,7 +56,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: appIconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -496,7 +497,7 @@ app.whenReady().then(async () => {
 
   // Set dock icon (macOS) — ensures the Gemma icon shows in dev mode
   if (process.platform === 'darwin' && app.dock) {
-    const dockIcon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
+    const dockIcon = nativeImage.createFromPath(appIconPath)
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon)
   }
 

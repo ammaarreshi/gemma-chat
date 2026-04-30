@@ -20,12 +20,15 @@ mac:
   hardenedRuntime: true
   gatekeeperAssess: false
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]
   signAndEditExecutable: false
   verifyUpdateCodeSignature: false
 nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
