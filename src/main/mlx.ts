@@ -202,7 +202,7 @@ export async function installMLX(
   // Step 3: Install mlx-lm (force public PyPI to bypass corporate registries)
   onProgress({ stage: 'install', message: 'Installing mlx-lm (this may take a few minutes)…' })
   await runProcess(vPy, [
-    '-m', 'pip', 'install', '--upgrade', 'mlx-lm>=0.24.0',
+    '-m', 'pip', 'install', '--upgrade', 'mlx-vlm>=0.4.3',
     '--index-url', 'https://pypi.org/simple/'
   ], onProgress)
 
@@ -288,11 +288,11 @@ export async function startServer(
   let earlyExit: { code: number | null; stderr: string } | null = null
   let stderrBuf = ''
 
-  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${MLX_PORT}`)
+  console.log(`[mlx] Starting server: ${python} -m mlx_vlm server --model ${model} --port ${MLX_PORT}`)
 
   serverProc = spawn(
     python,
-    ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)],
+    ['-m', 'mlx_vlm', 'server', '--model', model, '--port', String(MLX_PORT)],
     {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
