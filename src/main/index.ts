@@ -41,7 +41,12 @@ import {
 import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
-const appIconPath = join(__dirname, '../../Gemma-app-icon.png')
+const appIconPath = join(
+  __dirname,
+  '../../Assets 3.xcassets',
+  'AppIcon.appiconset',
+  '1024-mac.png'
+)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
