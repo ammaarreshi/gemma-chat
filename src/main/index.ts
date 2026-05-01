@@ -54,6 +54,12 @@ import {
   resolvePiAiApiKey,
   setPiAiApiKey
 } from './auth/piAiAuth'
+import {
+  clearInstalledDesign,
+  installDesign,
+  listDesignCatalog,
+  readDesignContext
+} from './designs'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -186,9 +192,16 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
     if (req.mode === 'code') {
       const wsPath = await ensureWorkspace(req.conversationId)
       const href = previewUrl(req.conversationId)
+      const designMarkdown = req.design
+        ? await readDesignContext(req.conversationId, req.design)
+        : null
+      const designContext =
+        req.design && designMarkdown ? { design: req.design, markdown: designMarkdown } : null
       baseMessages.push({
         role: 'system',
-        content: isPiAi ? piAiCodeSystemPrompt(wsPath, href) : codeSystemPrompt(wsPath, href)
+        content: isPiAi
+          ? piAiCodeSystemPrompt(wsPath, href, designContext)
+          : codeSystemPrompt(wsPath, href, designContext)
       })
     } else {
       baseMessages.push({
@@ -622,6 +635,28 @@ app.whenReady().then(async () => {
   ipcMain.handle('providers:config:save', async (_e, config: AppProviderConfig) => {
     return writeProviderConfig(config)
   })
+
+  ipcMain.handle('designs:list', async () => {
+    return listDesignCatalog()
+  })
+
+  ipcMain.handle(
+    'designs:install',
+    async (_e, { conversationId, slug }: { conversationId: string; slug: string }) => {
+      const design = await installDesign(conversationId, slug)
+      send('workspace:changed', { conversationId })
+      return design
+    }
+  )
+
+  ipcMain.handle(
+    'designs:clear',
+    async (_e, { conversationId, slug }: { conversationId: string; slug?: string }) => {
+      const result = await clearInstalledDesign(conversationId, slug)
+      if (result.removed) send('workspace:changed', { conversationId })
+      return result
+    }
+  )
 
   ipcMain.handle('providers:auth:getStatus', async (_e, config: PiAiProviderConfig) => {
     return getPiAiAuthStatus(config)

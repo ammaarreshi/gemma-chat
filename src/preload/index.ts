@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   ChatRequest,
   AppProviderConfig,
+  ConversationDesign,
+  DesignCatalogItem,
+  DesignClearResult,
   PiAiAuthEvent,
   PiAiAuthStatus,
   PiAiModelSummary,
@@ -38,6 +41,14 @@ const api = {
 
   saveProviderConfig: (config: AppProviderConfig): Promise<AppProviderConfig> =>
     ipcRenderer.invoke('providers:config:save', config),
+
+  listDesigns: (): Promise<DesignCatalogItem[]> => ipcRenderer.invoke('designs:list'),
+
+  installDesign: (conversationId: string, slug: string): Promise<ConversationDesign> =>
+    ipcRenderer.invoke('designs:install', { conversationId, slug }),
+
+  clearDesign: (conversationId: string, slug?: string): Promise<DesignClearResult> =>
+    ipcRenderer.invoke('designs:clear', { conversationId, slug }),
 
   getProviderAuthStatus: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
     ipcRenderer.invoke('providers:auth:getStatus', config),

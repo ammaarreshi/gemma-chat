@@ -46,6 +46,27 @@ export interface ChatRequest {
   provider?: ChatProviderSelection
   enableTools: boolean
   mode: AgentMode
+  design?: ConversationDesign
+}
+
+export interface DesignCatalogItem {
+  slug: string
+  name: string
+  category: string
+  description: string
+  sourceUrl: string
+}
+
+export interface ConversationDesign {
+  slug: string
+  name: string
+  description: string
+  installedAt: number
+}
+
+export interface DesignClearResult {
+  removed: boolean
+  reason?: string
 }
 
 export type RuntimeProviderId = 'local-mlx' | 'pi-ai'
