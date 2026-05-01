@@ -5,6 +5,9 @@ import type {
   ConversationDesign,
   DesignCatalogItem,
   DesignClearResult,
+  DesignExtractionEvent,
+  DesignExtractionRequest,
+  DesignExtractionStarted,
   PiAiAuthEvent,
   PiAiAuthStatus,
   PiAiModelSummary,
@@ -45,11 +48,34 @@ const api = {
 
   listDesigns: (): Promise<DesignCatalogItem[]> => ipcRenderer.invoke('designs:list'),
 
+  listCustomDesigns: (): Promise<ConversationDesign[]> =>
+    ipcRenderer.invoke('designs:custom:list'),
+
   installDesign: (conversationId: string, slug: string): Promise<ConversationDesign> =>
     ipcRenderer.invoke('designs:install', { conversationId, slug }),
 
-  clearDesign: (conversationId: string, slug?: string): Promise<DesignClearResult> =>
-    ipcRenderer.invoke('designs:clear', { conversationId, slug }),
+  installCustomDesign: (conversationId: string, customId: string): Promise<ConversationDesign> =>
+    ipcRenderer.invoke('designs:custom:install', { conversationId, customId }),
+
+  clearDesign: (
+    conversationId: string,
+    design?: ConversationDesign
+  ): Promise<DesignClearResult> =>
+    ipcRenderer.invoke('designs:clear', { conversationId, design }),
+
+  startDesignExtraction: (
+    request: DesignExtractionRequest
+  ): Promise<DesignExtractionStarted> =>
+    ipcRenderer.invoke('designs:extract:start', request),
+
+  cancelDesignExtraction: (jobId: string): Promise<{ cancelled: boolean }> =>
+    ipcRenderer.invoke('designs:extract:cancel', jobId),
+
+  onDesignExtractionEvent: (cb: (ev: DesignExtractionEvent) => void): (() => void) => {
+    const listener = (_: IpcRendererEvent, ev: DesignExtractionEvent): void => cb(ev)
+    ipcRenderer.on('designs:extract:event', listener)
+    return () => ipcRenderer.removeListener('designs:extract:event', listener)
+  },
 
   getProviderAuthStatus: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
     ipcRenderer.invoke('providers:auth:getStatus', config),

@@ -63,12 +63,45 @@ export interface ConversationDesign {
   name: string
   description: string
   installedAt: number
+  source?: 'catalog' | 'extracted'
+  sourceUrl?: string
+  customId?: string
 }
 
 export interface DesignClearResult {
   removed: boolean
   reason?: string
 }
+
+export interface DesignExtractionRequest {
+  conversationId: string
+  url: string
+  name?: string
+  full?: boolean
+  dark?: boolean
+  responsive?: boolean
+}
+
+export interface DesignExtractionStarted {
+  jobId: string
+}
+
+export type DesignExtractionEvent =
+  | {
+      type: 'progress'
+      jobId: string
+      message: string
+    }
+  | {
+      type: 'done'
+      jobId: string
+      design: ConversationDesign
+    }
+  | {
+      type: 'error'
+      jobId: string
+      error: string
+    }
 
 export type RuntimeProviderId = 'local-mlx' | 'ollama' | 'pi-ai'
 

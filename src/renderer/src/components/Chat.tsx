@@ -9,6 +9,7 @@ import {
   type ChatMessage,
   type ConversationDesign,
   type DesignCatalogItem,
+  type DesignExtractionEvent,
   type PiAiAuthEvent,
   type PiAiAuthMode,
   type PiAiAuthStatus,
@@ -269,9 +270,17 @@ export default function Chat({
     updateActive((c) => ({ ...c, mode: 'code', canvasOpen: true, design }))
   }
 
+  async function handleInstallCustomDesign(customId: string): Promise<void> {
+    const design = await window.api.installCustomDesign(activeId, customId)
+    updateActive((c) => ({ ...c, mode: 'code', canvasOpen: true, design }))
+  }
+
+  function handleDesignReady(design: ConversationDesign): void {
+    updateActive((c) => ({ ...c, mode: 'code', canvasOpen: true, design }))
+  }
+
   async function handleClearDesign(): Promise<void> {
-    const slug = activeConversation.design?.slug
-    await window.api.clearDesign(activeId, slug)
+    await window.api.clearDesign(activeId, activeConversation.design)
     updateActive((c) => ({ ...c, design: undefined }))
   }
 
@@ -314,6 +323,7 @@ export default function Chat({
       <div className="flex min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
+            conversationId={activeId}
             model={model}
             providerConfig={providerConfig}
             mode={activeConversation.mode}
@@ -326,6 +336,8 @@ export default function Chat({
             onSwitchModel={onSwitchModel}
             onProviderConfigChange={onProviderConfigChange}
             onInstallDesign={handleInstallDesign}
+            onInstallCustomDesign={handleInstallCustomDesign}
+            onDesignReady={handleDesignReady}
             onClearDesign={handleClearDesign}
           />
           <MessageList
@@ -420,6 +432,7 @@ function ResizableCanvas({
 }
 
 function Header({
+  conversationId,
   model,
   providerConfig,
   mode,
@@ -432,8 +445,11 @@ function Header({
   onSwitchModel,
   onProviderConfigChange,
   onInstallDesign,
+  onInstallCustomDesign,
+  onDesignReady,
   onClearDesign
 }: {
+  conversationId: string
   model: string
   providerConfig: AppProviderConfig
   mode: AgentMode
@@ -446,6 +462,8 @@ function Header({
   onSwitchModel: (model: string) => void
   onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
   onInstallDesign: (slug: string) => Promise<void>
+  onInstallCustomDesign: (customId: string) => Promise<void>
+  onDesignReady: (design: ConversationDesign) => void
   onClearDesign: () => Promise<void>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -484,8 +502,11 @@ function Header({
       <div className="no-drag flex shrink-0 items-center justify-end gap-2">
         {mode === 'code' && (
           <DesignMenu
+            conversationId={conversationId}
             selected={design}
             onSelect={onInstallDesign}
+            onSelectCustom={onInstallCustomDesign}
+            onExtracted={onDesignReady}
             onClear={onClearDesign}
           />
         )}
@@ -533,21 +554,36 @@ function Header({
 }
 
 function DesignMenu({
+  conversationId,
   selected,
   onSelect,
+  onSelectCustom,
+  onExtracted,
   onClear
 }: {
+  conversationId: string
   selected?: ConversationDesign
   onSelect: (slug: string) => Promise<void>
+  onSelectCustom: (customId: string) => Promise<void>
+  onExtracted: (design: ConversationDesign) => void
   onClear: () => Promise<void>
 }) {
   const [open, setOpen] = useState(false)
   const [designs, setDesigns] = useState<DesignCatalogItem[]>([])
+  const [customDesigns, setCustomDesigns] = useState<ConversationDesign[]>([])
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('All')
   const [busySlug, setBusySlug] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [extractOpen, setExtractOpen] = useState(false)
+  const [extractUrl, setExtractUrl] = useState('')
+  const [extractName, setExtractName] = useState('')
+  const [extractFull, setExtractFull] = useState(false)
+  const [extractDark, setExtractDark] = useState(false)
+  const [extractResponsive, setExtractResponsive] = useState(false)
+  const [extractJobId, setExtractJobId] = useState<string | null>(null)
+  const [extractMessage, setExtractMessage] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -563,15 +599,49 @@ function DesignMenu({
 
   useEffect(() => {
     if (!open || designs.length > 0) return
-    window.api
-      .listDesigns()
-      .then((items) => setDesigns(items))
+    Promise.all([window.api.listDesigns(), window.api.listCustomDesigns()])
+      .then(([catalog, custom]) => {
+        setDesigns(catalog)
+        setCustomDesigns(custom)
+      })
       .catch((e) => setError((e as Error).message))
   }, [designs.length, open])
 
+  useEffect(() => {
+    return window.api.onDesignExtractionEvent((ev: DesignExtractionEvent) => {
+      if (ev.jobId !== extractJobId) return
+      if (ev.type === 'progress') {
+        setExtractMessage(ev.message)
+      } else if (ev.type === 'done') {
+        setExtractJobId(null)
+        setExtractMessage('Installed.')
+        setCustomDesigns((prev) => [
+          ev.design,
+          ...prev.filter((design) => design.customId !== ev.design.customId)
+        ])
+        onExtracted(ev.design)
+        setExtractOpen(false)
+        setOpen(false)
+      } else if (ev.type === 'error') {
+        setExtractJobId(null)
+        setExtractMessage(null)
+        setError(ev.error)
+      }
+    })
+  }, [extractJobId, onExtracted])
+
   const categories = useMemo(() => {
-    return ['All', ...Array.from(new Set(designs.map((design) => design.category)))]
-  }, [designs])
+    return [
+      'All',
+      ...(customDesigns.length ? ['Extracted'] : []),
+      ...Array.from(new Set(designs.map((design) => design.category)))
+    ]
+  }, [customDesigns.length, designs])
+
+  const matchesQuery = useCallback((parts: Array<string | undefined>, q: string): boolean => {
+    if (!q) return true
+    return parts.join(' ').toLowerCase().includes(q)
+  }, [])
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -585,11 +655,32 @@ function DesignMenu({
     })
   }, [category, designs, query])
 
+  const filteredCustom = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (category !== 'All' && category !== 'Extracted') return []
+    return customDesigns.filter((design) =>
+      matchesQuery([design.name, design.description, design.sourceUrl], q)
+    )
+  }, [category, customDesigns, matchesQuery, query])
+
   async function selectDesign(slug: string): Promise<void> {
     setBusySlug(slug)
     setError(null)
     try {
       await onSelect(slug)
+      setOpen(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusySlug(null)
+    }
+  }
+
+  async function selectCustomDesign(customId: string): Promise<void> {
+    setBusySlug(customId)
+    setError(null)
+    try {
+      await onSelectCustom(customId)
       setOpen(false)
     } catch (e) {
       setError((e as Error).message)
@@ -609,6 +700,35 @@ function DesignMenu({
     } finally {
       setClearing(false)
     }
+  }
+
+  async function startExtraction(e: React.FormEvent): Promise<void> {
+    e.preventDefault()
+    if (!extractUrl.trim() || extractJobId) return
+    setError(null)
+    setExtractMessage('Preparing extractor...')
+    try {
+      const { jobId } = await window.api.startDesignExtraction({
+        conversationId,
+        url: extractUrl,
+        name: extractName || undefined,
+        full: extractFull,
+        dark: extractDark,
+        responsive: extractResponsive
+      })
+      setExtractJobId(jobId)
+    } catch (err) {
+      setExtractJobId(null)
+      setExtractMessage(null)
+      setError((err as Error).message)
+    }
+  }
+
+  async function cancelExtraction(): Promise<void> {
+    if (!extractJobId) return
+    await window.api.cancelDesignExtraction(extractJobId)
+    setExtractJobId(null)
+    setExtractMessage('Cancelled.')
   }
 
   return (
@@ -632,7 +752,7 @@ function DesignMenu({
       </button>
 
       {open && (
-        <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[460px] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-shadow/30 backdrop-blur-xl">
+        <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[480px] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-shadow/30 backdrop-blur-xl">
           <div className="border-b border-line p-3">
             <div className="flex items-center gap-2">
               <div className="relative min-w-0 flex-1">
@@ -656,7 +776,86 @@ function DesignMenu({
                   {clearing ? 'Clearing...' : 'Clear'}
                 </button>
               )}
+              <button
+                onClick={() => setExtractOpen((current) => !current)}
+                className={`h-8 rounded-lg border px-3 text-[12px] font-medium transition ${
+                  extractOpen
+                    ? 'border-sidebar-active bg-control-hover text-fg'
+                    : 'border-line bg-control text-muted hover:bg-control-hover hover:text-fg'
+                }`}
+              >
+                Create from site
+              </button>
             </div>
+            {extractOpen && (
+              <form
+                onSubmit={startExtraction}
+                className="mt-3 rounded-lg border border-line bg-surface p-3"
+              >
+                <div className="grid grid-cols-[1fr_9rem] gap-2">
+                  <input
+                    value={extractUrl}
+                    onChange={(e) => setExtractUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    disabled={!!extractJobId}
+                    className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active disabled:opacity-60"
+                  />
+                  <input
+                    value={extractName}
+                    onChange={(e) => setExtractName(e.target.value)}
+                    placeholder="Name"
+                    disabled={!!extractJobId}
+                    className="h-8 rounded-lg border border-line bg-panel px-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active disabled:opacity-60"
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted">
+                  <ExtractToggle
+                    label="Dark"
+                    checked={extractDark}
+                    disabled={!!extractJobId || extractFull}
+                    onChange={setExtractDark}
+                  />
+                  <ExtractToggle
+                    label="Responsive"
+                    checked={extractResponsive}
+                    disabled={!!extractJobId || extractFull}
+                    onChange={setExtractResponsive}
+                  />
+                  <ExtractToggle
+                    label="Full scan"
+                    checked={extractFull}
+                    disabled={!!extractJobId}
+                    onChange={setExtractFull}
+                  />
+                  <div className="flex-1" />
+                  {extractJobId ? (
+                    <button
+                      type="button"
+                      onClick={cancelExtraction}
+                      className="rounded-md border border-line bg-control px-2 py-1 text-[11px] text-muted hover:bg-control-hover hover:text-fg"
+                    >
+                      Cancel
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={!extractUrl.trim()}
+                      className="rounded-md bg-action px-2.5 py-1 text-[11px] font-medium text-action-fg hover:opacity-90 disabled:opacity-50"
+                    >
+                      Extract
+                    </button>
+                  )}
+                </div>
+                {extractMessage && (
+                  <div className="mt-2 text-[11px] text-ink-300">
+                    {extractJobId && (
+                      <span className="mr-1 inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-success" />
+                    )}
+                    {extractMessage}
+                  </div>
+                )}
+              </form>
+            )}
             <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5">
               {categories.map((cat) => (
                 <button
@@ -678,11 +877,71 @@ function DesignMenu({
             {designs.length === 0 && !error && (
               <div className="p-6 text-center text-[12px] text-muted">Loading designs...</div>
             )}
-            {filtered.length === 0 && designs.length > 0 && (
+            {filteredCustom.length === 0 && filtered.length === 0 && designs.length > 0 && (
               <div className="p-6 text-center text-[12px] text-muted">No matching designs.</div>
             )}
+            {filteredCustom.length > 0 && (
+              <div className="mb-2">
+                <div className="px-2 pb-1 pt-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+                  Extracted
+                </div>
+                {filteredCustom.map((design) => {
+                  const active =
+                    selected?.source === 'extracted' && selected.customId === design.customId
+                  const busy = busySlug === design.customId
+                  return (
+                    <div
+                      key={design.customId}
+                      className={`group rounded-lg border p-2 transition ${
+                        active
+                          ? 'border-sidebar-active bg-control-hover'
+                          : 'border-transparent hover:border-line hover:bg-control'
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <button
+                          onClick={() => design.customId && selectCustomDesign(design.customId)}
+                          disabled={!!busySlug || clearing || !design.customId}
+                          className="min-w-0 flex-1 text-left disabled:opacity-60"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-[12.5px] font-medium text-fg">
+                              {design.name}
+                            </span>
+                            {active && (
+                              <span className="rounded-full bg-sidebar-active px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-white">
+                                selected
+                              </span>
+                            )}
+                            {busy && (
+                              <span className="text-[10px] text-muted">installing...</span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 truncate text-[11px] text-muted">
+                            {design.sourceUrl}
+                          </div>
+                          <div className="mt-1 text-[11.5px] leading-snug text-ink-300">
+                            {design.description}
+                          </div>
+                        </button>
+                        {design.sourceUrl && (
+                          <a
+                            href={design.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="rounded-md px-2 py-1 text-[10.5px] text-faint transition hover:bg-panel-strong hover:text-fg"
+                          >
+                            Site
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
             {filtered.map((design) => {
-              const active = selected?.slug === design.slug
+              const active = (selected?.source ?? 'catalog') === 'catalog' && selected?.slug === design.slug
               const busy = busySlug === design.slug
               return (
                 <div
@@ -738,6 +997,31 @@ function DesignMenu({
         </div>
       )}
     </div>
+  )
+}
+
+function ExtractToggle({
+  label,
+  checked,
+  disabled,
+  onChange
+}: {
+  label: string
+  checked: boolean
+  disabled: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-center gap-1.5">
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 accent-accent-aubergine disabled:opacity-50"
+      />
+      {label}
+    </label>
   )
 }
 

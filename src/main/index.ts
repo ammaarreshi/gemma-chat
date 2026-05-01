@@ -38,7 +38,13 @@ import {
   workspaceDir,
   wsWriteFile
 } from './workspace'
-import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
+import type {
+  ChatRequest,
+  ConversationDesign,
+  DesignExtractionRequest,
+  StreamChunk,
+  ToolCall
+} from '../shared/types'
 import { streamLocalMlx } from './providers/localMlxProvider'
 import { streamLocalOllama } from './providers/localOllamaProvider'
 import {
@@ -63,10 +69,14 @@ import {
   setPiAiApiKey
 } from './auth/piAiAuth'
 import {
+  cancelDesignExtraction,
   clearInstalledDesign,
   installDesign,
+  installCustomDesign,
+  listCustomDesigns,
   listDesignCatalog,
-  readDesignContext
+  readDesignContext,
+  startDesignExtraction
 } from './designs'
 
 let mainWindow: BrowserWindow | null = null
@@ -684,6 +694,10 @@ app.whenReady().then(async () => {
     return listDesignCatalog()
   })
 
+  ipcMain.handle('designs:custom:list', async () => {
+    return listCustomDesigns()
+  })
+
   ipcMain.handle(
     'designs:install',
     async (_e, { conversationId, slug }: { conversationId: string; slug: string }) => {
@@ -694,13 +708,35 @@ app.whenReady().then(async () => {
   )
 
   ipcMain.handle(
+    'designs:custom:install',
+    async (_e, { conversationId, customId }: { conversationId: string; customId: string }) => {
+      const design = await installCustomDesign(conversationId, customId)
+      send('workspace:changed', { conversationId })
+      return design
+    }
+  )
+
+  ipcMain.handle(
     'designs:clear',
-    async (_e, { conversationId, slug }: { conversationId: string; slug?: string }) => {
-      const result = await clearInstalledDesign(conversationId, slug)
+    async (_e, { conversationId, design }: { conversationId: string; design?: ConversationDesign }) => {
+      const result = await clearInstalledDesign(conversationId, design)
       if (result.removed) send('workspace:changed', { conversationId })
       return result
     }
   )
+
+  ipcMain.handle('designs:extract:start', async (_e, request: DesignExtractionRequest) => {
+    return startDesignExtraction(request, (event) => {
+      send('designs:extract:event', event)
+      if (event.type === 'done') {
+        send('workspace:changed', { conversationId: request.conversationId })
+      }
+    })
+  })
+
+  ipcMain.handle('designs:extract:cancel', async (_e, jobId: string) => {
+    return { cancelled: cancelDesignExtraction(jobId) }
+  })
 
   ipcMain.handle('providers:auth:getStatus', async (_e, config: PiAiProviderConfig) => {
     return getPiAiAuthStatus(config)
