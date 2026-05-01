@@ -1,22 +1,41 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_MODEL, type SetupStatus } from '@shared/types'
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PI_AI_CONFIG,
+  type AppProviderConfig,
+  type SetupStatus
+} from '@shared/types'
 import Setup from './components/Setup'
 import Chat from './components/Chat'
 
 type AppState =
   | { phase: 'boot' }
-  | { phase: 'setup'; status: SetupStatus; model: string }
-  | { phase: 'ready'; model: string }
-  | { phase: 'switching'; model: string; toModel: string; status: SetupStatus }
+  | { phase: 'setup'; status: SetupStatus; model: string; providerConfig: AppProviderConfig }
+  | { phase: 'ready'; model: string; providerConfig: AppProviderConfig }
+  | {
+      phase: 'switching'
+      model: string
+      toModel: string
+      status: SetupStatus
+      providerConfig: AppProviderConfig
+    }
+
+function fallbackProviderConfig(): AppProviderConfig {
+  return {
+    selectedProvider: 'local-mlx',
+    localModel: DEFAULT_MODEL,
+    piAi: { ...DEFAULT_PI_AI_CONFIG }
+  }
+}
 
 export default function App() {
   const [state, setState] = useState<AppState>({ phase: 'boot' })
 
   useEffect(() => {
-    // Forward raw Gemma output to devtools console for debugging
+    // Forward raw model output to devtools console for debugging.
     const rawUnsub = window.api.onRawChunk((ev) => {
       // eslint-disable-next-line no-console
-      console.log('[gemma]', ev.chunk)
+      console.log('[model]', ev.chunk)
     })
     let unsub: (() => void) | undefined
     ;(async () => {
@@ -25,14 +44,26 @@ export default function App() {
           if (status.stage === 'ready') {
             // If we were switching, the new model is now ready
             if (prev.phase === 'switching') {
-              return { phase: 'ready', model: prev.toModel }
+              return {
+                phase: 'ready',
+                model: prev.toModel,
+                providerConfig: { ...prev.providerConfig, localModel: prev.toModel }
+              }
             }
-            return { phase: 'ready', model: prev.phase === 'setup' ? prev.model : DEFAULT_MODEL }
+            return {
+              phase: 'ready',
+              model: prev.phase === 'setup' ? prev.model : DEFAULT_MODEL,
+              providerConfig: prev.phase === 'setup' ? prev.providerConfig : fallbackProviderConfig()
+            }
           }
           if (status.stage === 'error') {
             // If switch failed, go back to the previous model
             if (prev.phase === 'switching') {
-              return { phase: 'ready', model: prev.model }
+              return {
+                phase: 'ready',
+                model: prev.model,
+                providerConfig: prev.providerConfig
+              }
             }
           }
           // If we're in switching phase, keep it as switching
@@ -40,13 +71,26 @@ export default function App() {
             return { ...prev, status }
           }
           const model = prev.phase === 'setup' ? prev.model : DEFAULT_MODEL
-          return { phase: 'setup', status, model }
+          const providerConfig =
+            prev.phase === 'setup' ? prev.providerConfig : fallbackProviderConfig()
+          return { phase: 'setup', status, model, providerConfig }
         })
       })
 
+      const providerConfig = await window.api.getProviderConfig()
+      if (providerConfig.selectedProvider === 'pi-ai') {
+        setState({
+          phase: 'ready',
+          model: providerConfig.localModel,
+          providerConfig
+        })
+        return
+      }
+
+      const model = providerConfig.localModel || DEFAULT_MODEL
       const local = await window.api.listLocalModels()
       const hasDefault = local.some(
-        (m) => m === DEFAULT_MODEL || m.startsWith(DEFAULT_MODEL + ':')
+        (m) => m === model || m.startsWith(model + ':')
       )
       if (hasDefault) {
         const { hasMLX } = await window.api.checkMLX()
@@ -54,16 +98,18 @@ export default function App() {
           setState({
             phase: 'setup',
             status: { stage: 'starting-mlx', message: 'Starting model runtime…' },
-            model: DEFAULT_MODEL
+            model,
+            providerConfig
           })
-          window.api.startSetup(DEFAULT_MODEL)
+          window.api.startSetup(model)
           return
         }
       }
       setState({
         phase: 'setup',
         status: { stage: 'checking', message: 'Welcome' },
-        model: DEFAULT_MODEL
+        model,
+        providerConfig
       })
     })()
     return () => {
@@ -80,10 +126,36 @@ export default function App() {
         phase: 'switching',
         model: prev.model,
         toModel: newModel,
-        status: { stage: 'downloading-model', message: 'Switching model…' }
+        status: { stage: 'downloading-model', message: 'Switching model…' },
+        providerConfig: { ...prev.providerConfig, selectedProvider: 'local-mlx', localModel: newModel }
       }
     })
     window.api.switchModel(newModel)
+  }
+
+  async function handleProviderConfigChange(config: AppProviderConfig): Promise<void> {
+    const saved = await window.api.saveProviderConfig(config)
+    setState((prev) => {
+      if (prev.phase === 'ready') {
+        return { ...prev, model: saved.localModel, providerConfig: saved }
+      }
+      if (prev.phase === 'setup') {
+        return { ...prev, model: saved.localModel, providerConfig: saved }
+      }
+      if (prev.phase === 'switching') {
+        return { ...prev, providerConfig: saved }
+      }
+      return prev
+    })
+  }
+
+  async function handleUsePiAi(): Promise<void> {
+    const current = state.phase === 'setup' ? state.providerConfig : fallbackProviderConfig()
+    const saved = await window.api.saveProviderConfig({
+      ...current,
+      selectedProvider: 'pi-ai'
+    })
+    setState({ phase: 'ready', model: saved.localModel, providerConfig: saved })
   }
 
   if (state.phase === 'boot') {
@@ -97,16 +169,30 @@ export default function App() {
           status={state.status}
           model={state.model}
           onModelChange={(m) =>
-            setState((s) => (s.phase === 'setup' ? { ...s, model: m } : s))
+            setState((s) =>
+              s.phase === 'setup'
+                ? {
+                    ...s,
+                    model: m,
+                    providerConfig: { ...s.providerConfig, localModel: m }
+                  }
+                : s
+            )
           }
           onStart={(model) => {
             setState({
               phase: 'setup',
               status: { stage: 'checking', message: 'Checking system…' },
-              model
+              model,
+              providerConfig: {
+                ...state.providerConfig,
+                selectedProvider: 'local-mlx',
+                localModel: model
+              }
             })
             window.api.startSetup(model)
           }}
+          onUsePiAi={handleUsePiAi}
         />
       </div>
     )
@@ -115,7 +201,12 @@ export default function App() {
   if (state.phase === 'switching') {
     return (
       <div key="switching" className="anim-fade-in h-full w-full">
-        <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+        <Chat
+          model={state.model}
+          providerConfig={state.providerConfig}
+          onProviderConfigChange={handleProviderConfigChange}
+          onSwitchModel={handleSwitchModel}
+        />
         <SwitchingOverlay status={state.status} />
       </div>
     )
@@ -123,7 +214,12 @@ export default function App() {
 
   return (
     <div key="chat" className="anim-fade-scale h-full w-full">
-      <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+      <Chat
+        model={state.model}
+        providerConfig={state.providerConfig}
+        onProviderConfigChange={handleProviderConfigChange}
+        onSwitchModel={handleSwitchModel}
+      />
     </div>
   )
 }

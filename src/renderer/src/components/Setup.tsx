@@ -6,6 +6,7 @@ interface Props {
   model: string
   onModelChange: (m: string) => void
   onStart: (model: string) => void
+  onUsePiAi: () => void
 }
 
 function formatBytes(n?: number): string {
@@ -20,7 +21,7 @@ function formatBytes(n?: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-export default function Setup({ status, model, onModelChange, onStart }: Props) {
+export default function Setup({ status, model, onModelChange, onStart, onUsePiAi }: Props) {
   const isWorking =
     status.stage === 'checking' ||
     status.stage === 'installing-mlx' ||
@@ -28,7 +29,14 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
     status.stage === 'downloading-model'
 
   if (status.stage === 'checking' && status.message === 'Welcome') {
-    return <WelcomeScreen model={model} onModelChange={onModelChange} onStart={onStart} />
+    return (
+      <WelcomeScreen
+        model={model}
+        onModelChange={onModelChange}
+        onStart={onStart}
+        onUsePiAi={onUsePiAi}
+      />
+    )
   }
 
   return (
@@ -86,11 +94,13 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
 function WelcomeScreen({
   model,
   onModelChange,
-  onStart
+  onStart,
+  onUsePiAi
 }: {
   model: string
   onModelChange: (m: string) => void
   onStart: (model: string) => void
+  onUsePiAi: () => void
 }) {
   const selected = AVAILABLE_MODELS.find((m) => m.name === model) ?? AVAILABLE_MODELS[1]
   return (
@@ -146,8 +156,14 @@ function WelcomeScreen({
           >
             Download {selected.label} &nbsp;·&nbsp; {selected.size}
           </button>
+          <button
+            onClick={onUsePiAi}
+            className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/[0.06] active:scale-[0.99]"
+          >
+            Use Pi AI Provider
+          </button>
           <p className="mt-3 text-center text-[11px] text-ink-400">
-            We'll install MLX runtime if needed. Model weights are cached locally.
+            Local MLX works offline. Pi AI uses provider credentials and does not require MLX.
           </p>
         </div>
       </div>

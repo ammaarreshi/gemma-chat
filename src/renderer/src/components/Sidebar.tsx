@@ -7,6 +7,7 @@ interface Conversation {
 interface Props {
   conversations: Conversation[]
   activeId: string
+  providerLabel: 'Local' | 'Pi AI'
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
@@ -15,6 +16,7 @@ interface Props {
 export default function Sidebar({
   conversations,
   activeId,
+  providerLabel,
   onSelect,
   onNew,
   onDelete
@@ -64,7 +66,7 @@ export default function Sidebar({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Running locally
+            {providerLabel === 'Local' ? 'Running locally' : 'Pi AI provider'}
           </div>
           <a
             href="https://x.com/ammaar"

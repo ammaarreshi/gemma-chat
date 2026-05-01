@@ -423,6 +423,41 @@ export function chatSystemPrompt(enableTools: boolean): string {
   ].join('\n')
 }
 
+export function piAiChatSystemPrompt(enableTools: boolean): string {
+  const now = new Date().toISOString()
+  const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+  if (!enableTools) {
+    return [
+      'You are an AI assistant in Gemma Chat.',
+      `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
+      'Be clear, concise, and helpful. Use markdown for formatting when useful.'
+    ].join('\n')
+  }
+  return [
+    'You are an AI assistant in Gemma Chat.',
+    `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
+    '',
+    'TOOL USE',
+    '========',
+    'When a tool helps, emit ONE action block and STOP. You will receive the result, then you may continue or call another tool.',
+    '',
+    'Action format:',
+    '<action name="tool_name">',
+    '<param_name>value</param_name>',
+    '</action>',
+    '',
+    'Rules:',
+    '- One action per response, on its own line.',
+    '- Never wrap actions in markdown code fences.',
+    '- After writing </action>, STOP. Wait for the result before continuing.',
+    '- When finished, write a short plain-text answer and emit no more actions.',
+    '',
+    'Tools:',
+    '',
+    renderToolHelp('chat')
+  ].join('\n')
+}
+
 export function codeSystemPrompt(workspacePath: string, previewHref: string): string {
   const now = new Date().toISOString()
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
@@ -495,6 +530,14 @@ export function codeSystemPrompt(workspacePath: string, previewHref: string): st
     '',
     renderToolHelp('code')
   ].join('\n')
+}
+
+export function piAiCodeSystemPrompt(workspacePath: string, previewHref: string): string {
+  const localPrompt = codeSystemPrompt(workspacePath, previewHref)
+  return localPrompt.replace(
+    "You are Gemma, a local coding agent running entirely on the user's Mac.",
+    'You are an AI coding agent in Gemma Chat.'
+  )
 }
 
 export interface ParsedAction {

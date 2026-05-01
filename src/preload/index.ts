@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   ChatRequest,
+  AppProviderConfig,
+  PiAiAuthEvent,
+  PiAiAuthStatus,
+  PiAiModelSummary,
+  PiAiProviderConfig,
+  ProviderListResponse,
   SetupStatus,
   StreamChunk,
   WorkspaceInfo,
@@ -21,6 +27,50 @@ const api = {
   },
 
   listLocalModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-local'),
+
+  listProviders: (): Promise<ProviderListResponse> => ipcRenderer.invoke('providers:list'),
+
+  listPiAiModels: (providerId: string): Promise<PiAiModelSummary[]> =>
+    ipcRenderer.invoke('providers:models:list', providerId),
+
+  getProviderConfig: (): Promise<AppProviderConfig> =>
+    ipcRenderer.invoke('providers:config:get'),
+
+  saveProviderConfig: (config: AppProviderConfig): Promise<AppProviderConfig> =>
+    ipcRenderer.invoke('providers:config:save', config),
+
+  getProviderAuthStatus: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
+    ipcRenderer.invoke('providers:auth:getStatus', config),
+
+  setProviderApiKey: (
+    config: PiAiProviderConfig,
+    apiKey: string
+  ): Promise<PiAiAuthStatus> =>
+    ipcRenderer.invoke('providers:auth:setApiKey', { config, apiKey }),
+
+  clearProviderAuth: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
+    ipcRenderer.invoke('providers:auth:clear', config),
+
+  loginProviderOAuth: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
+    ipcRenderer.invoke('providers:auth:loginOAuth', config),
+
+  refreshProviderAuth: (config: PiAiProviderConfig): Promise<PiAiAuthStatus> =>
+    ipcRenderer.invoke('providers:auth:refresh', config),
+
+  testProviderAuth: (config: PiAiProviderConfig): Promise<{ ok: true }> =>
+    ipcRenderer.invoke('providers:auth:test', config),
+
+  openProviderAuthUrl: (url: string): Promise<void> =>
+    ipcRenderer.invoke('providers:auth:openExternal', url),
+
+  respondProviderAuthPrompt: (promptId: string, value: string): Promise<void> =>
+    ipcRenderer.invoke('providers:auth:promptResponse', { promptId, value }),
+
+  onProviderAuthEvent: (cb: (ev: PiAiAuthEvent) => void): (() => void) => {
+    const listener = (_: IpcRendererEvent, ev: PiAiAuthEvent): void => cb(ev)
+    ipcRenderer.on('providers:auth:event', listener)
+    return () => ipcRenderer.removeListener('providers:auth:event', listener)
+  },
 
   sendChat: async (req: ChatRequest, onChunk: (c: StreamChunk) => void): Promise<void> => {
     const { channel } = (await ipcRenderer.invoke('chat:send', req)) as { channel: string }

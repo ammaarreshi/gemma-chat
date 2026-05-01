@@ -1,5 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AVAILABLE_MODELS, type AgentMode, type ChatMessage, type ToolCall, type StreamChunk } from '@shared/types'
+import {
+  AVAILABLE_MODELS,
+  type AgentMode,
+  type AppProviderConfig,
+  type ChatMessage,
+  type PiAiAuthEvent,
+  type PiAiAuthMode,
+  type PiAiAuthStatus,
+  type PiAiModelSummary,
+  type PiAiProviderConfig,
+  type PiAiProviderInfo,
+  type ToolCall,
+  type StreamChunk
+} from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 import Composer from './Composer'
 import Message from './Message'
@@ -8,7 +21,9 @@ import Canvas from './Canvas'
 
 interface Props {
   model: string
+  providerConfig: AppProviderConfig
   onSwitchModel: (model: string) => void
+  onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
 }
 
 interface Conversation {
@@ -56,7 +71,12 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export default function Chat({ model, onSwitchModel }: Props) {
+export default function Chat({
+  model,
+  providerConfig,
+  onSwitchModel,
+  onProviderConfigChange
+}: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations()
     return loaded.length ? loaded : [newConversation()]
@@ -124,7 +144,10 @@ export default function Chat({ model, onSwitchModel }: Props) {
       role: 'assistant',
       content: '',
       createdAt: Date.now(),
-      model,
+      model:
+        providerConfig.selectedProvider === 'pi-ai'
+          ? `${providerConfig.piAi.providerId}/${providerConfig.piAi.modelId}`
+          : model,
       toolCalls: [],
       activity: { kind: 'thinking' }
     }
@@ -152,6 +175,10 @@ export default function Chat({ model, onSwitchModel }: Props) {
           conversationId: activeId,
           messages: history,
           model,
+          provider:
+            providerConfig.selectedProvider === 'pi-ai'
+              ? { id: 'pi-ai', config: providerConfig.piAi }
+              : { id: 'local-mlx', model },
           enableTools: true,
           mode: conv.mode
         },
@@ -232,6 +259,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
       <Sidebar
         conversations={conversations}
         activeId={activeId}
+        providerLabel={providerConfig.selectedProvider === 'pi-ai' ? 'Pi AI' : 'Local'}
         onSelect={setActiveId}
         onNew={() => createConversation(activeConversation.mode)}
         onDelete={deleteConversation}
@@ -240,16 +268,23 @@ export default function Chat({ model, onSwitchModel }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
             model={model}
+            providerConfig={providerConfig}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
             onToggleMode={toggleMode}
             onToggleCanvas={toggleCanvas}
             onSwitchModel={onSwitchModel}
+            onProviderConfigChange={onProviderConfigChange}
           />
           <MessageList
             messages={activeConversation.messages}
             streaming={streaming}
             mode={activeConversation.mode}
+            providerLabel={
+              providerConfig.selectedProvider === 'pi-ai'
+                ? `${providerConfig.piAi.providerId}/${providerConfig.piAi.modelId}`
+                : 'local'
+            }
             onRegenerate={handleRegenerate}
           />
           <Composer
@@ -261,7 +296,9 @@ export default function Chat({ model, onSwitchModel }: Props) {
             placeholder={
               activeConversation.mode === 'code'
                 ? 'Describe what to build — a webpage, component, or script…'
-                : 'Message Gemma…'
+                : providerConfig.selectedProvider === 'pi-ai'
+                  ? 'Message your selected Pi AI provider…'
+                  : 'Message Gemma…'
             }
           />
         </div>
@@ -334,18 +371,22 @@ function ResizableCanvas({
 
 function Header({
   model,
+  providerConfig,
   mode,
   canvasOpen,
   onToggleMode,
   onToggleCanvas,
-  onSwitchModel
+  onSwitchModel,
+  onProviderConfigChange
 }: {
   model: string
+  providerConfig: AppProviderConfig
   mode: AgentMode
   canvasOpen: boolean
   onToggleMode: () => void
   onToggleCanvas: () => void
   onSwitchModel: (model: string) => void
+  onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -362,7 +403,10 @@ function Header({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [pickerOpen])
 
-  const currentLabel = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const currentLabel =
+    providerConfig.selectedProvider === 'pi-ai'
+      ? `${providerConfig.piAi.providerId} · ${providerConfig.piAi.modelId}`
+      : (AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model)
 
   return (
     <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
@@ -388,42 +432,15 @@ function Header({
             </svg>
           </button>
           {pickerOpen && (
-            <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-white/10 bg-[#1a1a1a] p-1.5 shadow-2xl backdrop-blur-xl">
-              <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
-                Switch model
-              </div>
-              {AVAILABLE_MODELS.map((m) => (
-                <button
-                  key={m.name}
-                  onClick={() => {
-                    setPickerOpen(false)
-                    if (m.name !== model) onSwitchModel(m.name)
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                    m.name === model
-                      ? 'bg-white/[0.07] text-white'
-                      : 'text-ink-200 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                      {m.label}
-                      {m.recommended && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          rec
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
-                  </div>
-                  {m.name === model && (
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-              ))}
-            </div>
+            <ProviderPicker
+              model={model}
+              providerConfig={providerConfig}
+              onSwitchModel={(nextModel) => {
+                setPickerOpen(false)
+                onSwitchModel(nextModel)
+              }}
+              onProviderConfigChange={onProviderConfigChange}
+            />
           )}
         </div>
         {mode === 'code' && (
@@ -442,6 +459,513 @@ function Header({
         )}
       </div>
     </div>
+  )
+}
+
+function ProviderPicker({
+  model,
+  providerConfig,
+  onSwitchModel,
+  onProviderConfigChange
+}: {
+  model: string
+  providerConfig: AppProviderConfig
+  onSwitchModel: (model: string) => void
+  onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
+}) {
+  const [piProviders, setPiProviders] = useState<PiAiProviderInfo[]>([])
+  const [models, setModels] = useState<PiAiModelSummary[]>([])
+  const [draft, setDraft] = useState<PiAiProviderConfig>(providerConfig.piAi)
+  const [authStatus, setAuthStatus] = useState<PiAiAuthStatus | null>(null)
+  const [authUrl, setAuthUrl] = useState<{ url: string; instructions?: string } | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
+  const apiKeyRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    setDraft(providerConfig.piAi)
+  }, [providerConfig.piAi])
+
+  useEffect(() => {
+    window.api.listProviders().then((res) => setPiProviders(res.piAiProviders)).catch(() => {
+      setPiProviders([])
+    })
+  }, [])
+
+  useEffect(() => {
+    if (draft.providerId === 'custom-openai-compatible') {
+      setModels([])
+      return
+    }
+    window.api.listPiAiModels(draft.providerId).then(setModels).catch(() => setModels([]))
+  }, [draft.providerId])
+
+  useEffect(() => {
+    if (!draft.modelId && models[0]) {
+      setDraft((prev) => ({ ...prev, modelId: models[0].id }))
+    }
+  }, [draft.modelId, models])
+
+  useEffect(() => {
+    let cancelled = false
+    window.api
+      .getProviderAuthStatus(draft)
+      .then((status) => {
+        if (!cancelled) setAuthStatus(status)
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setAuthStatus({
+            providerId: draft.providerId,
+            authMode: draft.authMode,
+            ready: false,
+            hasStoredCredential: false,
+            supportsOAuth: false,
+            message: (e as Error).message
+          })
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [draft])
+
+  useEffect(() => {
+    return window.api.onProviderAuthEvent((ev: PiAiAuthEvent) => {
+      if (ev.type === 'auth') {
+        setAuthUrl({ url: ev.url, instructions: ev.instructions })
+        setMessage(ev.instructions ?? 'Continue in your browser to finish sign-in.')
+      } else if (ev.type === 'progress') {
+        setMessage(ev.message)
+      } else if (ev.type === 'prompt') {
+        const answer = window.prompt(ev.message, '')
+        window.api.respondProviderAuthPrompt(ev.promptId, answer ?? '')
+      } else if (ev.type === 'complete') {
+        setAuthStatus(ev.status)
+        setMessage(ev.status.message ?? 'Signed in.')
+        setBusy(null)
+      } else if (ev.type === 'error') {
+        setMessage(ev.error)
+        setBusy(null)
+      }
+    })
+  }, [])
+
+  const selectedProvider = piProviders.find((p) => p.id === draft.providerId)
+  const showCompat = draft.providerId === 'custom-openai-compatible' || !!draft.baseUrl
+
+  function updateDraft(patch: Partial<PiAiProviderConfig>): void {
+    setDraft((prev) => ({ ...prev, ...patch }))
+  }
+
+  async function saveRuntime(selectedProviderId: AppProviderConfig['selectedProvider']): Promise<void> {
+    setBusy('save')
+    setMessage(null)
+    try {
+      await onProviderConfigChange({
+        ...providerConfig,
+        selectedProvider: selectedProviderId,
+        localModel: model,
+        piAi: draft
+      })
+      if (selectedProviderId === 'local-mlx' && providerConfig.selectedProvider !== 'local-mlx') {
+        window.api.startSetup(model)
+      }
+      setMessage('Saved.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function saveApiKey(): Promise<void> {
+    const key = apiKeyRef.current?.value ?? ''
+    setBusy('key')
+    setMessage(null)
+    try {
+      const status = await window.api.setProviderApiKey(draft, key)
+      setAuthStatus(status)
+      if (apiKeyRef.current) apiKeyRef.current.value = ''
+      setMessage(status.message ?? 'API key saved.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function loginOAuth(): Promise<void> {
+    setBusy('oauth')
+    setAuthUrl(null)
+    setMessage('Starting sign-in...')
+    try {
+      const status = await window.api.loginProviderOAuth(draft)
+      setAuthStatus(status)
+      setMessage(status.message ?? 'Signed in.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function clearAuth(): Promise<void> {
+    setBusy('clear')
+    setMessage(null)
+    try {
+      const status = await window.api.clearProviderAuth(draft)
+      setAuthStatus(status)
+      setMessage(status.message ?? 'Credentials cleared.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function refreshAuth(): Promise<void> {
+    setBusy('refresh')
+    setMessage(null)
+    try {
+      const status = await window.api.refreshProviderAuth(draft)
+      setAuthStatus(status)
+      setMessage(status.message ?? 'Credentials refreshed.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function testConnection(): Promise<void> {
+    setBusy('test')
+    setMessage(null)
+    try {
+      await window.api.testProviderAuth(draft)
+      setMessage('Connection works.')
+    } catch (e) {
+      setMessage((e as Error).message)
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  return (
+    <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[420px] rounded-xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl backdrop-blur-xl">
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-white/[0.04] p-1 text-[12px]">
+        <button
+          onClick={() => saveRuntime('local-mlx')}
+          className={`rounded-md px-2 py-1.5 font-medium transition ${
+            providerConfig.selectedProvider === 'local-mlx'
+              ? 'bg-white/10 text-white'
+              : 'text-ink-300 hover:bg-white/[0.05] hover:text-white'
+          }`}
+        >
+          Local Gemma / MLX
+        </button>
+        <button
+          onClick={() => saveRuntime('pi-ai')}
+          className={`rounded-md px-2 py-1.5 font-medium transition ${
+            providerConfig.selectedProvider === 'pi-ai'
+              ? 'bg-white/10 text-white'
+              : 'text-ink-300 hover:bg-white/[0.05] hover:text-white'
+          }`}
+        >
+          Pi AI Provider
+        </button>
+      </div>
+
+      <div className="max-h-[70vh] overflow-y-auto pr-1">
+        <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
+          Local models
+        </div>
+        <div className="space-y-1">
+          {AVAILABLE_MODELS.map((m) => (
+            <button
+              key={m.name}
+              onClick={() => {
+                if (m.name !== model) onSwitchModel(m.name)
+              }}
+              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                providerConfig.selectedProvider === 'local-mlx' && m.name === model
+                  ? 'bg-white/[0.07] text-white'
+                  : 'text-ink-200 hover:bg-white/[0.04]'
+              }`}
+            >
+              <div>
+                <div className="text-[12.5px] font-medium">{m.label}</div>
+                <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+              </div>
+              {m.recommended && (
+                <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                  rec
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="mt-4 border-t border-white/[0.07] pt-3">
+          <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
+            Pi AI
+          </div>
+          <label className="block text-[11px] text-ink-400">
+            Provider
+            <select
+              value={draft.providerId}
+              onChange={(e) => {
+                const provider = piProviders.find((p) => p.id === e.target.value)
+                updateDraft({
+                  providerId: e.target.value,
+                  authMode: provider?.defaultAuthMode ?? 'api-key',
+                  modelId: e.target.value === 'custom-openai-compatible' ? draft.modelId : ''
+                })
+              }}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25"
+            >
+              {piProviders.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {draft.providerId === 'openai' && (
+            <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-2 text-[11px] text-ink-300">
+              Uses OpenAI API key.
+            </p>
+          )}
+          {draft.providerId === 'openai-codex' && (
+            <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-2 text-[11px] text-ink-300">
+              Uses ChatGPT/Codex subscription OAuth, not OpenAI API key billing.
+            </p>
+          )}
+
+          <label className="mt-3 block text-[11px] text-ink-400">
+            Catalog model
+            <select
+              value={models.some((m) => m.id === draft.modelId) ? draft.modelId : ''}
+              onChange={(e) => updateDraft({ modelId: e.target.value })}
+              disabled={models.length === 0}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25 disabled:opacity-50"
+            >
+              <option value="">Custom model id</option>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name || m.id}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="mt-2 block text-[11px] text-ink-400">
+            Model id
+            <input
+              value={draft.modelId}
+              onChange={(e) => updateDraft({ modelId: e.target.value })}
+              placeholder={models[0]?.id ?? 'model-id'}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+            />
+          </label>
+
+          <label className="mt-2 block text-[11px] text-ink-400">
+            Auth method
+            <select
+              value={draft.authMode}
+              onChange={(e) => updateDraft({ authMode: e.target.value as PiAiAuthMode })}
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25"
+            >
+              <option value="api-key">API key</option>
+              <option value="oauth" disabled={!selectedProvider?.supportsOAuth}>
+                OAuth
+              </option>
+              <option value="env">Environment</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+
+          {draft.authMode === 'api-key' && (
+            <div className="mt-2 flex gap-2">
+              <input
+                ref={apiKeyRef}
+                type="password"
+                autoComplete="off"
+                placeholder="Paste API key"
+                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+              />
+              <button
+                onClick={saveApiKey}
+                disabled={!!busy}
+                className="rounded-lg border border-white/10 bg-white/[0.06] px-3 text-[12px] text-white hover:bg-white/[0.1] disabled:opacity-50"
+              >
+                Save key
+              </button>
+            </div>
+          )}
+
+          {draft.authMode === 'oauth' && (
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={loginOAuth}
+                disabled={!!busy || !selectedProvider?.supportsOAuth}
+                className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-[12px] text-white hover:bg-white/[0.1] disabled:opacity-50"
+              >
+                Sign in
+              </button>
+              {authUrl && (
+                <button
+                  onClick={() => window.api.openProviderAuthUrl(authUrl.url)}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-ink-100 hover:bg-white/[0.07]"
+                >
+                  Open browser
+                </button>
+              )}
+              {authStatus?.hasStoredCredential && (
+                <button
+                  onClick={refreshAuth}
+                  disabled={!!busy}
+                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-ink-100 hover:bg-white/[0.07] disabled:opacity-50"
+                >
+                  Refresh
+                </button>
+              )}
+            </div>
+          )}
+
+          <label className="mt-3 block text-[11px] text-ink-400">
+            Base URL
+            <input
+              value={draft.baseUrl ?? ''}
+              onChange={(e) => updateDraft({ baseUrl: e.target.value || undefined })}
+              placeholder="https://api.example.com/v1"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+            />
+          </label>
+
+          {showCompat && (
+            <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2">
+              <div className="mb-1 text-[11px] font-medium text-ink-300">OpenAI-compatible compat</div>
+              <CompatToggle
+                label="No developer role"
+                checked={draft.compat?.supportsDeveloperRole === false}
+                onChange={(checked) =>
+                  updateDraft({
+                    compat: {
+                      ...draft.compat,
+                      supportsDeveloperRole: checked ? false : undefined
+                    }
+                  })
+                }
+              />
+              <CompatToggle
+                label="No reasoning effort"
+                checked={draft.compat?.supportsReasoningEffort === false}
+                onChange={(checked) =>
+                  updateDraft({
+                    compat: {
+                      ...draft.compat,
+                      supportsReasoningEffort: checked ? false : undefined
+                    }
+                  })
+                }
+              />
+              <label className="mt-1 block text-[11px] text-ink-400">
+                Max tokens field
+                <select
+                  value={draft.compat?.maxTokensField ?? ''}
+                  onChange={(e) =>
+                    updateDraft({
+                      compat: {
+                        ...draft.compat,
+                        maxTokensField:
+                          e.target.value === 'max_tokens' ||
+                          e.target.value === 'max_completion_tokens'
+                            ? e.target.value
+                            : undefined
+                      }
+                    })
+                  }
+                  className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-white"
+                >
+                  <option value="">Auto</option>
+                  <option value="max_tokens">max_tokens</option>
+                  <option value="max_completion_tokens">max_completion_tokens</option>
+                </select>
+              </label>
+            </div>
+          )}
+
+          <div className="mt-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11px] text-ink-300">
+            <div className="flex items-center justify-between gap-3">
+              <span>{authStatus?.message ?? 'Checking auth...'}</span>
+              <span
+                className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                  authStatus?.ready ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+              />
+            </div>
+            {authStatus?.maskedCredential && (
+              <div className="mt-1 text-ink-500">{authStatus.maskedCredential}</div>
+            )}
+          </div>
+
+          {authUrl?.instructions && (
+            <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11px] text-ink-300">
+              {authUrl.instructions}
+            </div>
+          )}
+          {message && <div className="mt-2 text-[11px] text-ink-400">{message}</div>}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => saveRuntime('pi-ai')}
+              disabled={!!busy || !draft.modelId.trim()}
+              className="rounded-lg bg-white px-3 py-2 text-[12px] font-medium text-ink-900 hover:bg-white/90 disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              onClick={testConnection}
+              disabled={!!busy || !draft.modelId.trim()}
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] text-white hover:bg-white/[0.08] disabled:opacity-50"
+            >
+              Test connection
+            </button>
+            <button
+              onClick={clearAuth}
+              disabled={!!busy}
+              className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[12px] text-ink-300 hover:bg-white/[0.06] disabled:opacity-50"
+            >
+              Clear credentials
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CompatToggle({
+  label,
+  checked,
+  onChange
+}: {
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 py-1 text-[11px] text-ink-400">
+      {label}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-3.5 w-3.5 accent-white"
+      />
+    </label>
   )
 }
 
@@ -470,11 +994,13 @@ function MessageList({
   messages,
   streaming,
   mode,
+  providerLabel,
   onRegenerate
 }: {
   messages: ChatMessage[]
   streaming: boolean
   mode: AgentMode
+  providerLabel: string
   onRegenerate: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -501,7 +1027,7 @@ function MessageList({
   return (
     <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
       {empty ? (
-        <EmptyState mode={mode} />
+        <EmptyState mode={mode} providerLabel={providerLabel} />
       ) : (
         <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
           {messages.map((m, i) => (
@@ -524,7 +1050,7 @@ function MessageList({
   )
 }
 
-function EmptyState({ mode }: { mode: AgentMode }) {
+function EmptyState({ mode, providerLabel }: { mode: AgentMode; providerLabel: string }) {
   const chatSuggestions = [
     { title: 'Search the web', prompt: 'What are the top AI news stories this week?' },
     { title: 'Explain a concept', prompt: 'Explain the transformer architecture in plain English.' },
@@ -559,8 +1085,12 @@ function EmptyState({ mode }: { mode: AgentMode }) {
         </div>
         <div className="text-sm text-ink-400">
           {mode === 'code'
-            ? 'Gemma will write files into a workspace and show a live preview on the right.'
-            : 'Running locally. Your messages never leave your Mac.'}
+            ? providerLabel === 'local'
+              ? 'Gemma will write files into a workspace and show a live preview on the right.'
+              : `The selected Pi AI model will write files into a workspace and stream changes back.`
+            : providerLabel === 'local'
+              ? 'Running locally. Your messages never leave your Mac.'
+              : `Streaming through ${providerLabel}. Provider terms and network access apply.`}
         </div>
       </div>
       <div className="anim-stagger grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">

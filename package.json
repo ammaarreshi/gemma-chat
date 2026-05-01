@@ -20,6 +20,7 @@
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@huggingface/transformers": "^4.1.0",
+    "@mariozechner/pi-ai": "^0.71.0",
     "electron-updater": "^6.3.9",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.7"

@@ -11,7 +11,8 @@
     "baseUrl": ".",
     "types": ["electron-vite/node"],
     "paths": {
-      "@shared/*": ["src/shared/*"]
+      "@shared/*": ["src/shared/*"],
+      "@mariozechner/pi-ai/oauth": ["node_modules/@mariozechner/pi-ai/dist/oauth.d.ts"]
     }
   }
 }

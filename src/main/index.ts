@@ -1,14 +1,12 @@
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, session, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { AVAILABLE_MODELS } from '@shared/types'
+import { AVAILABLE_MODELS, type AppProviderConfig, type PiAiProviderConfig } from '@shared/types'
 import {
   locateMLX,
   installMLX,
   startServer,
   stopServer,
-  hasModel,
-  chatStream,
   listLocalModels,
   type MLXChatMessage
 } from './mlx'
@@ -16,6 +14,8 @@ import {
   TOOLS,
   chatSystemPrompt,
   codeSystemPrompt,
+  piAiChatSystemPrompt,
+  piAiCodeSystemPrompt,
   findNextAction,
   emitSafeBoundary,
   runTool,
@@ -33,6 +33,27 @@ import {
   wsWriteFile
 } from './workspace'
 import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
+import { streamLocalMlx } from './providers/localMlxProvider'
+import {
+  listPiAiModels,
+  listPiAiProviders,
+  resolvePiAiModel,
+  streamPiAi
+} from './providers/piAiProvider'
+import { defaultProviderSelection } from './providers/types'
+import {
+  readProviderConfig,
+  writeProviderConfig
+} from './providers/config'
+import {
+  clearPiAiCredentials,
+  coerceOAuthPrompt,
+  getPiAiAuthStatus,
+  loginPiAiOAuth,
+  refreshPiAiOAuth,
+  resolvePiAiApiKey,
+  setPiAiApiKey
+} from './auth/piAiAuth'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -159,13 +180,21 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
 
   try {
     const baseMessages: MLXChatMessage[] = []
+    const provider = req.provider ?? defaultProviderSelection(req.model)
+    const isPiAi = provider.id === 'pi-ai'
 
     if (req.mode === 'code') {
       const wsPath = await ensureWorkspace(req.conversationId)
       const href = previewUrl(req.conversationId)
-      baseMessages.push({ role: 'system', content: codeSystemPrompt(wsPath, href) })
+      baseMessages.push({
+        role: 'system',
+        content: isPiAi ? piAiCodeSystemPrompt(wsPath, href) : codeSystemPrompt(wsPath, href)
+      })
     } else {
-      baseMessages.push({ role: 'system', content: chatSystemPrompt(req.enableTools) })
+      baseMessages.push({
+        role: 'system',
+        content: isPiAi ? piAiChatSystemPrompt(req.enableTools) : chatSystemPrompt(req.enableTools)
+      })
     }
 
     for (const m of req.messages) {
@@ -189,6 +218,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
 
     const useTools = req.mode === 'code' || req.enableTools
     const maxRounds = req.mode === 'code' ? MAX_TOOL_ROUNDS_CODE : MAX_TOOL_ROUNDS_CHAT
+    const piAiApiKey = provider.id === 'pi-ai' ? await resolvePiAiApiKey(provider.config) : undefined
 
     emit({ type: 'activity', activity: { kind: 'thinking', chars: 0 } })
 
@@ -253,11 +283,23 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
         }
       }
 
-      streamLoop: for await (const chunk of chatStream({
-        model: req.model,
-        messages: baseMessages,
-        signal: abort.signal
-      })) {
+      const chunks =
+        provider.id === 'pi-ai'
+          ? streamPiAi({
+              conversationId: req.conversationId,
+              config: provider.config,
+              messages: baseMessages,
+              apiKey: piAiApiKey,
+              signal: abort.signal
+            })
+          : streamLocalMlx({
+              conversationId: req.conversationId,
+              model: provider.model,
+              messages: baseMessages,
+              signal: abort.signal
+            })
+
+      streamLoop: for await (const chunk of chunks) {
         if (chunk.content) {
           if (firstToken) {
             firstToken = false
@@ -446,6 +488,51 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
 }
 
 const chatAbortControllers = new Map<string, AbortController>()
+const oauthPromptResolvers = new Map<string, (value: string) => void>()
+
+function oauthRequestId(): string {
+  return `oauth_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+function providerRuntimeList() {
+  return [
+    {
+      id: 'local-mlx' as const,
+      label: 'Local Gemma / MLX',
+      description: 'Runs Gemma locally through the existing MLX runtime.'
+    },
+    {
+      id: 'pi-ai' as const,
+      label: 'Pi AI Provider',
+      description: 'Routes cloud and compatible models through @mariozechner/pi-ai.'
+    }
+  ]
+}
+
+async function testPiAiProvider(config: PiAiProviderConfig): Promise<{ ok: true }> {
+  resolvePiAiModel(config)
+  const apiKey = await resolvePiAiApiKey(config)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30000)
+  try {
+    const chunks = streamPiAi({
+      conversationId: `test_${Date.now()}`,
+      config,
+      apiKey,
+      signal: controller.signal,
+      messages: [
+        { role: 'system', content: 'Reply with OK.' },
+        { role: 'user', content: 'OK' }
+      ]
+    })
+    for await (const chunk of chunks) {
+      if (chunk.content || chunk.done) break
+    }
+    return { ok: true }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
 
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.ammaar.gemmachat')
@@ -473,6 +560,8 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler(() => true)
 
   ipcMain.handle('setup:start', async (_e, model: string) => {
+    const config = await readProviderConfig()
+    await writeProviderConfig({ ...config, selectedProvider: 'local-mlx', localModel: model })
     await handleSetup(model)
   })
 
@@ -494,6 +583,8 @@ app.whenReady().then(async () => {
           progress: p.progress
         })
       })
+      const config = await readProviderConfig()
+      await writeProviderConfig({ ...config, selectedProvider: 'local-mlx', localModel: model })
       send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
     } catch (e) {
       send('setup:status', {
@@ -511,6 +602,114 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('models:list-local', async () => {
     return listLocalModels()
+  })
+
+  ipcMain.handle('providers:list', async () => {
+    return {
+      providers: providerRuntimeList(),
+      piAiProviders: listPiAiProviders()
+    }
+  })
+
+  ipcMain.handle('providers:models:list', async (_e, providerId: string) => {
+    return listPiAiModels(providerId)
+  })
+
+  ipcMain.handle('providers:config:get', async () => {
+    return readProviderConfig()
+  })
+
+  ipcMain.handle('providers:config:save', async (_e, config: AppProviderConfig) => {
+    return writeProviderConfig(config)
+  })
+
+  ipcMain.handle('providers:auth:getStatus', async (_e, config: PiAiProviderConfig) => {
+    return getPiAiAuthStatus(config)
+  })
+
+  ipcMain.handle(
+    'providers:auth:setApiKey',
+    async (_e, { config, apiKey }: { config: PiAiProviderConfig; apiKey: string }) => {
+      return setPiAiApiKey(config, apiKey)
+    }
+  )
+
+  ipcMain.handle('providers:auth:clear', async (_e, config: PiAiProviderConfig) => {
+    return clearPiAiCredentials(config)
+  })
+
+  ipcMain.handle('providers:auth:refresh', async (_e, config: PiAiProviderConfig) => {
+    return refreshPiAiOAuth(config)
+  })
+
+  ipcMain.handle('providers:auth:test', async (_e, config: PiAiProviderConfig) => {
+    return testPiAiProvider(config)
+  })
+
+  ipcMain.handle(
+    'providers:auth:promptResponse',
+    async (_e, { promptId, value }: { promptId: string; value: string }) => {
+      const resolve = oauthPromptResolvers.get(promptId)
+      if (resolve) {
+        oauthPromptResolvers.delete(promptId)
+        resolve(value)
+      }
+    }
+  )
+
+  ipcMain.handle('providers:auth:openExternal', async (_e, url: string) => {
+    await shell.openExternal(url)
+  })
+
+  ipcMain.handle('providers:auth:loginOAuth', async (_e, config: PiAiProviderConfig) => {
+    const requestId = oauthRequestId()
+    const promptRenderer = (message: string, placeholder?: string, allowEmpty?: boolean): Promise<string> =>
+      new Promise((resolve) => {
+        const promptId = oauthRequestId()
+        oauthPromptResolvers.set(promptId, resolve)
+        send('providers:auth:event', {
+          type: 'prompt',
+          requestId,
+          promptId,
+          message,
+          placeholder,
+          allowEmpty
+        })
+      })
+
+    try {
+      const status = await loginPiAiOAuth(config, {
+        onAuth: (info) => {
+          send('providers:auth:event', {
+            type: 'auth',
+            requestId,
+            url: info.url,
+            instructions: info.instructions
+          })
+        },
+        onPrompt: (prompt) => {
+          const safePrompt = coerceOAuthPrompt(prompt)
+          return promptRenderer(
+            safePrompt.message,
+            safePrompt.placeholder,
+            safePrompt.allowEmpty
+          )
+        },
+        onProgress: (message) => {
+          send('providers:auth:event', { type: 'progress', requestId, message })
+        },
+        onManualCodeInput: () => promptRenderer('Paste the OAuth authorization code.', 'Code')
+      })
+      send('providers:auth:event', { type: 'complete', requestId, status })
+      return status
+    } catch (e) {
+      send('providers:auth:event', {
+        type: 'error',
+        requestId,
+        error: (e as Error).message
+      })
+      throw e
+    }
   })
 
   ipcMain.handle('chat:send', async (_e, req: ChatRequest) => {

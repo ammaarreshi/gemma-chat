@@ -43,9 +43,140 @@ export interface ChatRequest {
   conversationId: string
   messages: Array<{ role: Role; content: string; toolCalls?: ToolCall[] }>
   model: string
+  provider?: ChatProviderSelection
   enableTools: boolean
   mode: AgentMode
 }
+
+export type RuntimeProviderId = 'local-mlx' | 'pi-ai'
+
+export type PiAiAuthMode = 'api-key' | 'oauth' | 'env' | 'none'
+
+export type PiAiProviderId =
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'google-vertex'
+  | 'mistral'
+  | 'groq'
+  | 'cerebras'
+  | 'xai'
+  | 'openrouter'
+  | 'vercel-ai-gateway'
+  | 'github-copilot'
+  | 'openai-codex'
+  | 'amazon-bedrock'
+  | 'custom-openai-compatible'
+  | string
+
+export interface PiAiCompatSettings {
+  supportsStore?: boolean
+  supportsDeveloperRole?: boolean
+  supportsReasoningEffort?: boolean
+  supportsUsageInStreaming?: boolean
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens'
+}
+
+export interface PiAiProviderConfig {
+  providerId: PiAiProviderId
+  modelId: string
+  authMode: PiAiAuthMode
+  baseUrl?: string
+  contextWindow?: number
+  maxTokens?: number
+  input?: Array<'text' | 'image'>
+  reasoning?: boolean
+  compat?: PiAiCompatSettings
+}
+
+export interface LocalMlxProviderSelection {
+  id: 'local-mlx'
+  model: string
+}
+
+export interface PiAiProviderSelection {
+  id: 'pi-ai'
+  config: PiAiProviderConfig
+}
+
+export type ChatProviderSelection = LocalMlxProviderSelection | PiAiProviderSelection
+
+export interface AppProviderConfig {
+  selectedProvider: RuntimeProviderId
+  localModel: string
+  piAi: PiAiProviderConfig
+}
+
+export interface ProviderInfo {
+  id: RuntimeProviderId
+  label: string
+  description: string
+}
+
+export interface PiAiProviderInfo {
+  id: string
+  label: string
+  supportsOAuth: boolean
+  defaultAuthMode: PiAiAuthMode
+}
+
+export interface ProviderListResponse {
+  providers: ProviderInfo[]
+  piAiProviders: PiAiProviderInfo[]
+}
+
+export interface PiAiModelSummary {
+  id: string
+  name: string
+  provider: string
+  api: string
+  contextWindow: number
+  maxTokens: number
+  input: Array<'text' | 'image'>
+  reasoning: boolean
+}
+
+export interface PiAiAuthStatus {
+  providerId: string
+  authMode: PiAiAuthMode
+  ready: boolean
+  hasStoredCredential: boolean
+  maskedCredential?: string
+  envKeys?: string[]
+  supportsOAuth: boolean
+  message?: string
+}
+
+export type PiAiAuthEvent =
+  | {
+      type: 'auth'
+      requestId: string
+      url: string
+      instructions?: string
+    }
+  | {
+      type: 'prompt'
+      requestId: string
+      promptId: string
+      message: string
+      placeholder?: string
+      allowEmpty?: boolean
+    }
+  | {
+      type: 'progress'
+      requestId: string
+      message: string
+    }
+  | {
+      type: 'complete'
+      requestId: string
+      status: PiAiAuthStatus
+    }
+  | {
+      type: 'error'
+      requestId: string
+      error: string
+    }
 
 export interface WorkspaceInfo {
   conversationId: string
@@ -122,3 +253,10 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
 
 export const DEFAULT_MODEL = 'mlx-community/gemma-4-e4b-it-4bit'
 
+export const DEFAULT_PI_AI_CONFIG: PiAiProviderConfig = {
+  providerId: 'openai',
+  modelId: 'gpt-4o-mini',
+  authMode: 'api-key',
+  input: ['text'],
+  reasoning: false
+}
