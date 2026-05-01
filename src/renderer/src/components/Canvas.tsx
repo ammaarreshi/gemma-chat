@@ -246,7 +246,7 @@ function CodeView({ live }: { live: LiveFile | null }) {
               <div key={i}>{i + 1}</div>
             ))}
           </div>
-          <pre className="flex-1 whitespace-pre-wrap break-words px-4 py-3 text-ink-100">
+          <pre className="flex-1 whitespace-pre px-4 py-3 text-ink-100">
             {live.content}
             {!live.done && <span className="anim-caret">▍</span>}
           </pre>

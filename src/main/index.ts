@@ -384,6 +384,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
             })
             executedAction = true
             if (livePath) {
+              writeLivePartial()
               send('file:streaming', {
                 conversationId: req.conversationId,
                 path: livePath,
