@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 import {
   DEFAULT_MODEL,
   DEFAULT_PI_AI_CONFIG,
@@ -7,6 +7,7 @@ import {
 } from '@shared/types'
 import Setup from './components/Setup'
 import Chat from './components/Chat'
+import { applyTheme, persistTheme, readStoredTheme, type ThemeMode } from './theme'
 
 type AppState =
   | { phase: 'boot' }
@@ -30,6 +31,12 @@ function fallbackProviderConfig(): AppProviderConfig {
 
 export default function App() {
   const [state, setState] = useState<AppState>({ phase: 'boot' })
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme())
+
+  useLayoutEffect(() => {
+    applyTheme(theme)
+    persistTheme(theme)
+  }, [theme])
 
   useEffect(() => {
     // Forward raw model output to devtools console for debugging.
@@ -204,6 +211,8 @@ export default function App() {
         <Chat
           model={state.model}
           providerConfig={state.providerConfig}
+          theme={theme}
+          onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
           onProviderConfigChange={handleProviderConfigChange}
           onSwitchModel={handleSwitchModel}
         />
@@ -217,6 +226,8 @@ export default function App() {
       <Chat
         model={state.model}
         providerConfig={state.providerConfig}
+        theme={theme}
+        onToggleTheme={() => setTheme((current) => (current === 'dark' ? 'light' : 'dark'))}
         onProviderConfigChange={handleProviderConfigChange}
         onSwitchModel={handleSwitchModel}
       />
@@ -234,15 +245,15 @@ function BootSplash() {
 
 function SwitchingOverlay({ status }: { status: SetupStatus }) {
   return (
-    <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className="anim-fade-up flex flex-col items-center gap-4 rounded-2xl border border-white/10 bg-ink-950 px-10 py-8 shadow-2xl">
+    <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-overlay/70 backdrop-blur-sm">
+      <div className="anim-fade-up flex flex-col items-center gap-4 rounded-2xl border border-line bg-panel px-10 py-8 shadow-2xl shadow-shadow">
         <div className="shimmer h-1 w-32 rounded-full" />
         <p className="text-sm text-ink-200">{status.message}</p>
         {status.progress != null && status.progress > 0 && (
           <div className="w-48">
-            <div className="h-1 w-full rounded-full bg-white/10">
+            <div className="h-1 w-full rounded-full bg-control">
               <div
-                className="h-full rounded-full bg-white/60 transition-all duration-500"
+                className="h-full rounded-full bg-accent-green transition-all duration-500"
                 style={{ width: `${Math.round(status.progress * 100)}%` }}
               />
             </div>

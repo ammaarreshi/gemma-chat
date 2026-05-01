@@ -1,7 +1,7 @@
 {
-  "name": "gemma-chat",
+  "name": "vibe-chat",
   "version": "0.1.0",
-  "description": "Local AI chat on your Mac, powered by Gemma 3",
+  "description": "Local AI chat and vibe-coding workspace for your Mac",
   "main": "./out/main/index.js",
   "author": "Ammaar",
   "license": "MIT",

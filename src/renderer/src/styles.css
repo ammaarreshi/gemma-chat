@@ -2,12 +2,85 @@
 @tailwind components;
 @tailwind utilities;
 
+:root,
+html[data-theme='dark'] {
+  --color-app: 31 20 33;
+  --color-surface: 24 18 26;
+  --color-panel: 39 27 42;
+  --color-panel-strong: 54 37 58;
+  --color-control: 64 43 68;
+  --color-control-hover: 82 53 88;
+  --color-line: 92 65 97;
+  --color-fg: 251 247 250;
+  --color-muted: 201 184 204;
+  --color-faint: 151 130 156;
+  --color-sidebar: 74 21 75;
+  --color-sidebar-active: 97 31 105;
+  --color-user: 97 31 105;
+  --color-user-fg: 255 255 255;
+  --color-action: 236 178 46;
+  --color-action-fg: 36 19 38;
+  --color-overlay: 0 0 0;
+  --color-shadow: 0 0 0;
+  --color-code: 18 13 20;
+  --color-link: 54 197 240;
+  --color-danger: 224 30 90;
+  --color-success: 46 182 125;
+  --color-warning: 236 178 46;
+  --color-ink-50: 255 252 255;
+  --color-ink-100: 251 247 250;
+  --color-ink-200: 231 220 234;
+  --color-ink-300: 214 199 218;
+  --color-ink-400: 171 149 176;
+  --color-ink-500: 139 116 144;
+  --color-ink-600: 101 76 106;
+  --color-ink-800: 53 37 56;
+  --color-ink-900: 31 20 33;
+  --color-ink-950: 18 12 20;
+}
+
+html[data-theme='light'] {
+  --color-app: 250 247 250;
+  --color-surface: 255 255 255;
+  --color-panel: 246 241 247;
+  --color-panel-strong: 239 231 241;
+  --color-control: 238 231 240;
+  --color-control-hover: 228 217 231;
+  --color-line: 215 202 218;
+  --color-fg: 32 24 34;
+  --color-muted: 98 80 103;
+  --color-faint: 132 113 138;
+  --color-sidebar: 74 21 75;
+  --color-sidebar-active: 97 31 105;
+  --color-user: 74 21 75;
+  --color-user-fg: 255 255 255;
+  --color-action: 74 21 75;
+  --color-action-fg: 255 255 255;
+  --color-overlay: 32 24 34;
+  --color-shadow: 58 38 62;
+  --color-code: 249 246 250;
+  --color-link: 18 100 163;
+  --color-danger: 186 24 76;
+  --color-success: 0 122 90;
+  --color-warning: 154 100 12;
+  --color-ink-50: 28 20 30;
+  --color-ink-100: 32 24 34;
+  --color-ink-200: 58 44 62;
+  --color-ink-300: 78 60 84;
+  --color-ink-400: 112 91 118;
+  --color-ink-500: 143 122 149;
+  --color-ink-600: 178 162 183;
+  --color-ink-800: 231 224 234;
+  --color-ink-900: 246 241 247;
+  --color-ink-950: 255 255 255;
+}
+
 html,
 body,
 #root {
   height: 100%;
-  background: transparent;
-  color: #e8e8e8;
+  background: rgb(var(--color-app));
+  color: rgb(var(--color-fg));
 }
 
 body {
@@ -43,13 +116,13 @@ textarea,
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgb(var(--color-control));
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgb(var(--color-control-hover));
   background-clip: padding-box;
   border: 2px solid transparent;
 }
@@ -87,19 +160,19 @@ textarea,
   margin-bottom: 0.25em;
 }
 .markdown-body code {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgb(var(--color-control));
   padding: 0.1em 0.35em;
   border-radius: 4px;
   font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
   font-size: 0.9em;
 }
 .markdown-body pre {
-  background: rgba(0, 0, 0, 0.5);
+  background: rgb(var(--color-code));
   padding: 0.9em 1em;
   border-radius: 8px;
   overflow-x: auto;
   margin: 0.75em 0;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgb(var(--color-line) / 0.65);
 }
 .markdown-body pre code {
   background: transparent;
@@ -108,15 +181,15 @@ textarea,
   line-height: 1.5;
 }
 .markdown-body a {
-  color: #7aa2f7;
+  color: rgb(var(--color-link));
   text-decoration: underline;
-  text-decoration-color: rgba(122, 162, 247, 0.35);
+  text-decoration-color: rgb(var(--color-link) / 0.38);
   text-underline-offset: 2px;
 }
 .markdown-body blockquote {
-  border-left: 3px solid rgba(255, 255, 255, 0.15);
+  border-left: 3px solid rgb(var(--color-line));
   padding-left: 1em;
-  color: rgba(232, 232, 232, 0.75);
+  color: rgb(var(--color-muted));
   margin-bottom: 0.75em;
 }
 .markdown-body table {
@@ -125,7 +198,7 @@ textarea,
 }
 .markdown-body th,
 .markdown-body td {
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgb(var(--color-line));
   padding: 0.35em 0.6em;
 }
 
@@ -169,9 +242,9 @@ textarea,
 .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.06) 0%,
-    rgba(255, 255, 255, 0.14) 50%,
-    rgba(255, 255, 255, 0.06) 100%
+    rgb(var(--color-control) / 0.62) 0%,
+    rgb(var(--color-control-hover) / 0.92) 50%,
+    rgb(var(--color-control) / 0.62) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.8s linear infinite;
@@ -180,9 +253,9 @@ textarea,
 .shimmer-text {
   background: linear-gradient(
     90deg,
-    rgba(232, 232, 232, 0.55) 0%,
-    rgba(255, 255, 255, 1) 50%,
-    rgba(232, 232, 232, 0.55) 100%
+    rgb(var(--color-muted) / 0.55) 0%,
+    rgb(var(--color-fg)) 50%,
+    rgb(var(--color-muted) / 0.55) 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -206,7 +279,7 @@ textarea,
   display: inline-block;
   margin-left: 1px;
   animation: caret-blink 1s steps(2) infinite;
-  color: #888;
+  color: rgb(var(--color-faint));
 }
 
 /* ── Page & view transitions ── */
