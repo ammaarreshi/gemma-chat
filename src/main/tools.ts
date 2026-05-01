@@ -8,6 +8,7 @@ import {
   listTree,
   previewUrl
 } from './workspace'
+import type { ConversationDesign } from '@shared/types'
 
 export interface ToolContext {
   conversationId: string
@@ -458,10 +459,19 @@ export function piAiChatSystemPrompt(enableTools: boolean): string {
   ].join('\n')
 }
 
-export function codeSystemPrompt(workspacePath: string, previewHref: string): string {
+export interface CodeDesignContext {
+  design: ConversationDesign
+  markdown: string
+}
+
+export function codeSystemPrompt(
+  workspacePath: string,
+  previewHref: string,
+  designContext?: CodeDesignContext | null
+): string {
   const now = new Date().toISOString()
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
-  return [
+  const lines = [
     "You are Vibe, a local coding agent running entirely on the user's Mac.",
     `Date: ${now} (${day}). Workspace: ${workspacePath}. Preview: ${previewHref}`,
     '',
@@ -471,7 +481,26 @@ export function codeSystemPrompt(workspacePath: string, previewHref: string): st
     '- Real-feeling copy, not lorem ipsum. Invent brand names and details.',
     '- Make it actually work: click handlers wired, animations smooth, forms usable.',
     '- Fetch real images only when asked; otherwise use CSS/SVG for illustrations.',
-    '',
+    ''
+  ]
+
+  if (designContext) {
+    lines.push(
+      'DESIGN REFERENCE',
+      `The user selected ${designContext.design.name} from getdesign.md for this Build conversation.`,
+      'This is an inspired design reference, not an official brand design system.',
+      'Use the reference as the visual direction for generated UI: colors, typography, spacing, component styling, depth, responsive behavior, and do/dont guidance.',
+      'Do not use brand logos, trademarks, or official product claims unless the user explicitly asks for them.',
+      'If the user gives a conflicting design instruction, follow the user request while preserving as much of the selected design language as possible.',
+      '',
+      'BEGIN DESIGN.md',
+      designContext.markdown,
+      'END DESIGN.md',
+      ''
+    )
+  }
+
+  lines.push(
     'FILE STRUCTURE — PREFER MULTI-FILE FOR ANYTHING NON-TRIVIAL',
     '- One-off widgets / tiny demos → single `index.html` with <style> + <script> inline.',
     '- Landing pages, apps with state, anything > ~200 lines → split into:',
@@ -529,11 +558,17 @@ export function codeSystemPrompt(workspacePath: string, previewHref: string): st
     'AVAILABLE TOOLS',
     '',
     renderToolHelp('code')
-  ].join('\n')
+  )
+
+  return lines.join('\n')
 }
 
-export function piAiCodeSystemPrompt(workspacePath: string, previewHref: string): string {
-  const localPrompt = codeSystemPrompt(workspacePath, previewHref)
+export function piAiCodeSystemPrompt(
+  workspacePath: string,
+  previewHref: string,
+  designContext?: CodeDesignContext | null
+): string {
+  const localPrompt = codeSystemPrompt(workspacePath, previewHref, designContext)
   return localPrompt.replace(
     "You are Vibe, a local coding agent running entirely on the user's Mac.",
     'You are an AI coding agent in Vibe Chat.'

@@ -7,6 +7,8 @@ import {
   type AgentMode,
   type AppProviderConfig,
   type ChatMessage,
+  type ConversationDesign,
+  type DesignCatalogItem,
   type PiAiAuthEvent,
   type PiAiAuthMode,
   type PiAiAuthStatus,
@@ -39,6 +41,7 @@ interface Conversation {
   createdAt: number
   mode: AgentMode
   canvasOpen?: boolean
+  design?: ConversationDesign
 }
 
 const STORAGE_KEY = 'vibe-chat:conversations:v2'
@@ -206,7 +209,8 @@ export default function Chat({
                 ? { id: 'ollama', model: providerConfig.ollamaModel }
                 : { id: 'local-mlx', model },
           enableTools: true,
-          mode: conv.mode
+          mode: conv.mode,
+          design: conv.mode === 'code' ? conv.design : undefined
         },
         (chunk: StreamChunk) => {
           if (streamRef.current.abort) return
@@ -260,6 +264,17 @@ export default function Chat({
     setStreaming(false)
   }
 
+  async function handleInstallDesign(slug: string): Promise<void> {
+    const design = await window.api.installDesign(activeId, slug)
+    updateActive((c) => ({ ...c, mode: 'code', canvasOpen: true, design }))
+  }
+
+  async function handleClearDesign(): Promise<void> {
+    const slug = activeConversation.design?.slug
+    await window.api.clearDesign(activeId, slug)
+    updateActive((c) => ({ ...c, design: undefined }))
+  }
+
   async function handleRegenerate(): Promise<void> {
     if (streaming) return
     const conv = conversations.find((c) => c.id === activeId)
@@ -303,12 +318,15 @@ export default function Chat({
             providerConfig={providerConfig}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
+            design={activeConversation.design}
             theme={theme}
             onToggleMode={toggleMode}
             onToggleCanvas={toggleCanvas}
             onToggleTheme={onToggleTheme}
             onSwitchModel={onSwitchModel}
             onProviderConfigChange={onProviderConfigChange}
+            onInstallDesign={handleInstallDesign}
+            onClearDesign={handleClearDesign}
           />
           <MessageList
             messages={activeConversation.messages}
@@ -406,23 +424,29 @@ function Header({
   providerConfig,
   mode,
   canvasOpen,
+  design,
   theme,
   onToggleMode,
   onToggleCanvas,
   onToggleTheme,
   onSwitchModel,
-  onProviderConfigChange
+  onProviderConfigChange,
+  onInstallDesign,
+  onClearDesign
 }: {
   model: string
   providerConfig: AppProviderConfig
   mode: AgentMode
   canvasOpen: boolean
+  design?: ConversationDesign
   theme: ThemeMode
   onToggleMode: () => void
   onToggleCanvas: () => void
   onToggleTheme: () => void
   onSwitchModel: (model: string) => void
   onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
+  onInstallDesign: (slug: string) => Promise<void>
+  onClearDesign: () => Promise<void>
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -458,6 +482,13 @@ function Header({
         </ModePill>
       </div>
       <div className="no-drag flex shrink-0 items-center justify-end gap-2">
+        {mode === 'code' && (
+          <DesignMenu
+            selected={design}
+            onSelect={onInstallDesign}
+            onClear={onClearDesign}
+          />
+        )}
         <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         <div className="relative" ref={pickerRef}>
           <button
@@ -497,6 +528,215 @@ function Header({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+function DesignMenu({
+  selected,
+  onSelect,
+  onClear
+}: {
+  selected?: ConversationDesign
+  onSelect: (slug: string) => Promise<void>
+  onClear: () => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [designs, setDesigns] = useState<DesignCatalogItem[]>([])
+  const [query, setQuery] = useState('')
+  const [category, setCategory] = useState('All')
+  const [busySlug, setBusySlug] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent): void {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  useEffect(() => {
+    if (!open || designs.length > 0) return
+    window.api
+      .listDesigns()
+      .then((items) => setDesigns(items))
+      .catch((e) => setError((e as Error).message))
+  }, [designs.length, open])
+
+  const categories = useMemo(() => {
+    return ['All', ...Array.from(new Set(designs.map((design) => design.category)))]
+  }, [designs])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return designs.filter((design) => {
+      if (category !== 'All' && design.category !== category) return false
+      if (!q) return true
+      return [design.name, design.slug, design.description, design.category]
+        .join(' ')
+        .toLowerCase()
+        .includes(q)
+    })
+  }, [category, designs, query])
+
+  async function selectDesign(slug: string): Promise<void> {
+    setBusySlug(slug)
+    setError(null)
+    try {
+      await onSelect(slug)
+      setOpen(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusySlug(null)
+    }
+  }
+
+  async function clearDesign(): Promise<void> {
+    setClearing(true)
+    setError(null)
+    try {
+      await onClear()
+      setOpen(false)
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition ${
+          selected
+            ? 'border-sidebar-active/70 bg-control-hover text-fg'
+            : 'border-line bg-panel text-muted hover:bg-panel-strong hover:text-fg'
+        }`}
+        title={selected ? `Design: ${selected.name}` : 'Design: None'}
+      >
+        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M3 4.5h10M3 8h10M3 11.5h6" strokeLinecap="round" />
+          <path d="M11 10.5l1 1 2-2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="max-w-[9rem] truncate">
+          Design: {selected ? selected.name : 'None'}
+        </span>
+      </button>
+
+      {open && (
+        <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[460px] overflow-hidden rounded-xl border border-line bg-panel shadow-2xl shadow-shadow/30 backdrop-blur-xl">
+          <div className="border-b border-line p-3">
+            <div className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <svg viewBox="0 0 16 16" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-faint" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <circle cx="7" cy="7" r="4" />
+                  <path d="M10.5 10.5L14 14" strokeLinecap="round" />
+                </svg>
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search designs"
+                  className="h-8 w-full rounded-lg border border-line bg-surface pl-8 pr-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
+                />
+              </div>
+              {selected && (
+                <button
+                  onClick={clearDesign}
+                  disabled={clearing || !!busySlug}
+                  className="h-8 rounded-lg border border-line bg-control px-3 text-[12px] text-muted hover:bg-control-hover hover:text-fg disabled:opacity-50"
+                >
+                  {clearing ? 'Clearing...' : 'Clear'}
+                </button>
+              )}
+            </div>
+            <div className="mt-2 flex gap-1 overflow-x-auto pb-0.5">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setCategory(cat)}
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-[10.5px] font-medium transition ${
+                    category === cat
+                      ? 'bg-sidebar-active text-white'
+                      : 'bg-control text-muted hover:bg-control-hover hover:text-fg'
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="max-h-[52vh] overflow-y-auto p-2">
+            {designs.length === 0 && !error && (
+              <div className="p-6 text-center text-[12px] text-muted">Loading designs...</div>
+            )}
+            {filtered.length === 0 && designs.length > 0 && (
+              <div className="p-6 text-center text-[12px] text-muted">No matching designs.</div>
+            )}
+            {filtered.map((design) => {
+              const active = selected?.slug === design.slug
+              const busy = busySlug === design.slug
+              return (
+                <div
+                  key={design.slug}
+                  className={`group rounded-lg border p-2 transition ${
+                    active
+                      ? 'border-sidebar-active bg-control-hover'
+                      : 'border-transparent hover:border-line hover:bg-control'
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    <button
+                      onClick={() => selectDesign(design.slug)}
+                      disabled={!!busySlug || clearing}
+                      className="min-w-0 flex-1 text-left disabled:opacity-60"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-[12.5px] font-medium text-fg">
+                          {design.name}
+                        </span>
+                        {active && (
+                          <span className="rounded-full bg-sidebar-active px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-white">
+                            selected
+                          </span>
+                        )}
+                        {busy && (
+                          <span className="text-[10px] text-muted">installing...</span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted">{design.category}</div>
+                      <div className="mt-1 line-clamp-2 text-[11.5px] leading-snug text-ink-300">
+                        {design.description}
+                      </div>
+                    </button>
+                    <a
+                      href={design.sourceUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-md px-2 py-1 text-[10.5px] text-faint transition hover:bg-panel-strong hover:text-fg"
+                    >
+                      View source
+                    </a>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="border-t border-line px-3 py-2 text-[10.5px] text-faint">
+            Inspired design reference, not official.
+            {error && <span className="ml-2 text-danger">{error}</span>}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
