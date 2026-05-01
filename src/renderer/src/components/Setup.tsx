@@ -172,7 +172,7 @@ function WelcomeScreen({
             onClick={onUsePiAi}
             className="mt-2 w-full rounded-xl border border-line bg-panel py-3 text-sm font-medium text-fg transition hover:border-sidebar-active hover:bg-panel-strong active:scale-[0.99]"
           >
-            Use Pi AI Provider
+            Use AI Provider
           </button>
           <button
             onClick={onUseOllama}
@@ -181,7 +181,7 @@ function WelcomeScreen({
             Use Ollama
           </button>
           <p className="mt-3 text-center text-[11px] text-muted">
-            Local MLX works offline. Pi AI and Ollama do not require MLX.
+            Local MLX works offline. AI Provider and Ollama do not require MLX.
           </p>
         </div>
       </div>
