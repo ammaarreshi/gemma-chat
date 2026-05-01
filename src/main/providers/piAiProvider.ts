@@ -127,7 +127,7 @@ export async function* streamPiAi(
         yield { done: true }
         return
       }
-      throw new Error(event.error.errorMessage || 'Pi AI stream failed')
+      throw new Error(event.error.errorMessage || 'AI provider stream failed')
     }
   }
 

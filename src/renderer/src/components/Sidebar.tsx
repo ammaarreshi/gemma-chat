@@ -7,7 +7,7 @@ interface Conversation {
 interface Props {
   conversations: Conversation[]
   activeId: string
-  providerLabel: 'Local' | 'Ollama' | 'Pi AI'
+  providerLabel: 'Local' | 'Ollama' | 'AI Provider'
   onSelect: (id: string) => void
   onNew: () => void
   onDelete: (id: string) => void
@@ -70,7 +70,7 @@ export default function Sidebar({
               ? 'Running locally'
               : providerLabel === 'Ollama'
                 ? 'Ollama local'
-                : 'Pi AI provider'}
+                : 'AI provider'}
           </div>
         </div>
       </div>

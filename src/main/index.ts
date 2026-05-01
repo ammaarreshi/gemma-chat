@@ -549,8 +549,8 @@ function providerRuntimeList() {
     },
     {
       id: 'pi-ai' as const,
-      label: 'Pi AI Provider',
-      description: 'Routes cloud and compatible models through @mariozechner/pi-ai.'
+      label: 'AI Provider',
+      description: 'Routes cloud and compatible models through the provider runtime.'
     }
   ]
 }

@@ -302,7 +302,7 @@ export default function Chat({
         activeId={activeId}
         providerLabel={
           providerConfig.selectedProvider === 'pi-ai'
-            ? 'Pi AI'
+            ? 'AI Provider'
             : providerConfig.selectedProvider === 'ollama'
               ? 'Ollama'
               : 'Local'
@@ -345,7 +345,7 @@ export default function Chat({
               activeConversation.mode === 'code'
                 ? 'Describe what to build — a webpage, component, or script…'
                 : providerConfig.selectedProvider === 'pi-ai'
-                  ? 'Message your selected Pi AI provider…'
+                  ? 'Message your selected AI provider…'
                   : providerConfig.selectedProvider === 'ollama'
                     ? 'Message your local Ollama model…'
                     : 'Message Vibe…'
@@ -776,6 +776,9 @@ function ProviderPicker({
   const [draftOllamaModel, setDraftOllamaModel] = useState(
     providerConfig.ollamaModel || DEFAULT_OLLAMA_MODEL
   )
+  const [activeProvider, setActiveProvider] = useState<AppProviderConfig['selectedProvider']>(
+    providerConfig.selectedProvider
+  )
   const [authStatus, setAuthStatus] = useState<PiAiAuthStatus | null>(null)
   const [authUrl, setAuthUrl] = useState<{ url: string; instructions?: string } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -789,6 +792,10 @@ function ProviderPicker({
   useEffect(() => {
     setDraftOllamaModel(providerConfig.ollamaModel || DEFAULT_OLLAMA_MODEL)
   }, [providerConfig.ollamaModel])
+
+  useEffect(() => {
+    setActiveProvider(providerConfig.selectedProvider)
+  }, [providerConfig.selectedProvider])
 
   useEffect(() => {
     window.api.listProviders().then((res) => setPiProviders(res.piAiProviders)).catch(() => {
@@ -882,6 +889,7 @@ function ProviderPicker({
       if (selectedProviderId === 'local-mlx' && providerConfig.selectedProvider !== 'local-mlx') {
         window.api.startSetup(model)
       }
+      setActiveProvider(selectedProviderId)
       setMessage('Saved.')
     } catch (e) {
       setMessage((e as Error).message)
@@ -966,9 +974,9 @@ function ProviderPicker({
     <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[420px] rounded-xl border border-line bg-panel p-2 shadow-2xl shadow-shadow/30 backdrop-blur-xl">
       <div className="mb-2 grid grid-cols-3 gap-1 rounded-lg bg-control p-1 text-[12px]">
         <button
-          onClick={() => saveRuntime('local-mlx')}
+          onClick={() => setActiveProvider('local-mlx')}
           className={`rounded-md px-2 py-1.5 font-medium transition ${
-            providerConfig.selectedProvider === 'local-mlx'
+            activeProvider === 'local-mlx'
               ? 'bg-sidebar-active text-white'
               : 'text-muted hover:bg-control-hover hover:text-fg'
           }`}
@@ -976,9 +984,9 @@ function ProviderPicker({
           Local MLX
         </button>
         <button
-          onClick={() => saveRuntime('ollama')}
+          onClick={() => setActiveProvider('ollama')}
           className={`rounded-md px-2 py-1.5 font-medium transition ${
-            providerConfig.selectedProvider === 'ollama'
+            activeProvider === 'ollama'
               ? 'bg-sidebar-active text-white'
               : 'text-muted hover:bg-control-hover hover:text-fg'
           }`}
@@ -986,92 +994,112 @@ function ProviderPicker({
           Ollama
         </button>
         <button
-          onClick={() => saveRuntime('pi-ai')}
+          onClick={() => setActiveProvider('pi-ai')}
           className={`rounded-md px-2 py-1.5 font-medium transition ${
-            providerConfig.selectedProvider === 'pi-ai'
+            activeProvider === 'pi-ai'
               ? 'bg-sidebar-active text-white'
               : 'text-muted hover:bg-control-hover hover:text-fg'
           }`}
         >
-          Pi AI Provider
+          AI Provider
         </button>
       </div>
 
       <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
-          Local models
-        </div>
-        <div className="space-y-1">
-          {AVAILABLE_MODELS.filter((m) => m.provider === 'mlx').map((m) => (
+        {activeProvider === 'local-mlx' && (
+          <>
+            <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+              Local models
+            </div>
+            <div className="space-y-1">
+              {AVAILABLE_MODELS.filter((m) => m.provider === 'mlx').map((m) => (
+                <button
+                  key={m.name}
+                  onClick={() => {
+                    if (m.name !== model) {
+                      onSwitchModel(m.name)
+                    } else {
+                      void saveRuntime('local-mlx')
+                    }
+                  }}
+                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                    providerConfig.selectedProvider === 'local-mlx' && m.name === model
+                      ? 'bg-control-hover text-fg'
+                      : 'text-ink-200 hover:bg-control'
+                  }`}
+                >
+                  <div>
+                    <div className="text-[12.5px] font-medium">{m.label}</div>
+                    <div className="mt-0.5 text-[11px] text-muted">{m.size}</div>
+                  </div>
+                  {m.recommended && (
+                    <span className="rounded-full bg-control px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                      rec
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
             <button
-              key={m.name}
-              onClick={() => {
-                if (m.name !== model) onSwitchModel(m.name)
-              }}
-              className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                providerConfig.selectedProvider === 'local-mlx' && m.name === model
-                  ? 'bg-control-hover text-fg'
-                  : 'text-ink-200 hover:bg-control'
-              }`}
+              onClick={() => saveRuntime('local-mlx')}
+              disabled={!!busy}
+              className="mt-2 rounded-lg bg-action px-3 py-2 text-[12px] font-medium text-action-fg hover:opacity-90 disabled:opacity-50"
             >
-              <div>
-                <div className="text-[12.5px] font-medium">{m.label}</div>
-                <div className="mt-0.5 text-[11px] text-muted">{m.size}</div>
-              </div>
-              {m.recommended && (
-                <span className="rounded-full bg-control px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                  rec
-                </span>
-              )}
+              Save Local MLX
             </button>
-          ))}
-        </div>
+            {message && <div className="mt-2 text-[11px] text-muted">{message}</div>}
+          </>
+        )}
 
-        <div className="mt-4 border-t border-line pt-3">
-          <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
-            Ollama
-          </div>
-          <label className="block text-[11px] text-muted">
-            Model
-            <select
+        {activeProvider === 'ollama' && (
+          <div>
+            <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+              Ollama
+            </div>
+            <label className="block text-[11px] text-muted">
+              Model
+              <select
+                value={draftOllamaModel}
+                onChange={(e) => setDraftOllamaModel(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none focus:border-sidebar-active"
+              >
+                <option value={draftOllamaModel}>
+                  {runtimeModelName(draftOllamaModel)}
+                </option>
+                {ollamaModels
+                  .filter((m) => m !== draftOllamaModel)
+                  .map((m) => (
+                    <option key={m} value={m}>
+                      {runtimeModelName(m)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <input
               value={draftOllamaModel}
               onChange={(e) => setDraftOllamaModel(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none focus:border-sidebar-active"
+              placeholder="ollama:gemma4:31b"
+              className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
+            />
+            <p className="mt-2 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
+              Start Ollama and install a model first, for example: <code>ollama pull gemma4:31b</code>.
+            </p>
+            <button
+              onClick={() => saveRuntime('ollama')}
+              disabled={!!busy || !draftOllamaModel.trim()}
+              className="mt-2 rounded-lg bg-action px-3 py-2 text-[12px] font-medium text-action-fg hover:opacity-90 disabled:opacity-50"
             >
-              <option value={draftOllamaModel}>
-                {runtimeModelName(draftOllamaModel)}
-              </option>
-              {ollamaModels
-                .filter((m) => m !== draftOllamaModel)
-                .map((m) => (
-                  <option key={m} value={m}>
-                    {runtimeModelName(m)}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <input
-            value={draftOllamaModel}
-            onChange={(e) => setDraftOllamaModel(e.target.value)}
-            placeholder="ollama:gemma4:31b"
-            className="mt-2 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
-          />
-          <p className="mt-2 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
-            Start Ollama and install a model first, for example: <code>ollama pull gemma4:31b</code>.
-          </p>
-          <button
-            onClick={() => saveRuntime('ollama')}
-            disabled={!!busy || !draftOllamaModel.trim()}
-            className="mt-2 rounded-lg bg-action px-3 py-2 text-[12px] font-medium text-action-fg hover:opacity-90 disabled:opacity-50"
-          >
-            Save Ollama
-          </button>
-        </div>
-
-        <div className="mt-4 border-t border-line pt-3">
-          <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
-            Pi AI
+              Save Ollama
+            </button>
+            {message && <div className="mt-2 text-[11px] text-muted">{message}</div>}
           </div>
+        )}
+
+        {activeProvider === 'pi-ai' && (
+          <div>
+            <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
+              AI Provider
+            </div>
           <label className="block text-[11px] text-muted">
             Provider
             <select
@@ -1304,6 +1332,7 @@ function ProviderPicker({
             </button>
           </div>
         </div>
+        )}
       </div>
     </div>
   )
@@ -1451,7 +1480,7 @@ function EmptyState({ mode, providerLabel }: { mode: AgentMode; providerLabel: s
               ? 'Vibe will write files into a workspace and show a live preview on the right.'
               : providerLabel.startsWith('Ollama/')
                 ? `${providerLabel} will write files into a workspace and stream changes back.`
-              : `The selected Pi AI model will write files into a workspace and stream changes back.`
+              : `The selected AI provider model will write files into a workspace and stream changes back.`
             : providerLabel === 'local'
               ? 'Running locally. Your messages never leave your Mac.'
               : providerLabel.startsWith('Ollama/')
