@@ -1,5 +1,5 @@
-appId: com.ammaar.gemmachat
-productName: Gemma Chat
+appId: com.ammaar.vibechat
+productName: Vibe Chat
 directories:
   buildResources: build
 files:

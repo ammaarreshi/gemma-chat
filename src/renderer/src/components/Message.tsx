@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { marked } from 'marked'
 import type { AgentActivity, ChatMessage, ToolCall } from '@shared/types'
-import gemmaLogoUrl from '../assets/gemma-logo.png'
+import vibeLogoUrl from '../assets/vibe-logo.png'
 
 interface Props {
   message: ChatMessage
@@ -51,7 +51,7 @@ export default function Message({
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="selectable max-w-[78%] rounded-2xl rounded-br-md bg-white/[0.08] px-4 py-2.5 text-[14.5px] leading-relaxed text-white">
+        <div className="selectable max-w-[78%] rounded-2xl rounded-br-md bg-user px-4 py-2.5 text-[14.5px] leading-relaxed text-user-fg shadow-sm shadow-shadow/10">
           <div className="whitespace-pre-wrap">{message.content}</div>
         </div>
       </div>
@@ -65,7 +65,7 @@ export default function Message({
 
   return (
     <div className="group flex gap-3">
-      <img src={gemmaLogoUrl} alt="Gemma" className="mt-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
+      <img src={vibeLogoUrl} alt="Vibe Chat" className="mt-0.5 h-7 w-7 shrink-0 rounded-full object-cover" />
       <div className="selectable min-w-0 flex-1">
         {parsed.thinking && (
           <ThinkingBlock content={parsed.thinking} inProgress={parsed.thinkingInProgress} />
@@ -75,7 +75,7 @@ export default function Message({
 
         {!isEmpty && (
           <div
-            className="markdown-body text-[14.5px] text-ink-100"
+            className="markdown-body text-[14.5px] text-fg"
             dangerouslySetInnerHTML={{
               __html: html + (showCursor && parsed.visible ? '<span class="anim-caret">▍</span>' : '')
             }}
@@ -91,7 +91,7 @@ export default function Message({
         )}
 
         {isEmpty && showCursor && !showActivity && (
-          <div className="dot-flashing text-ink-400">
+          <div className="dot-flashing text-muted">
             <span />
             <span />
             <span />
@@ -102,13 +102,13 @@ export default function Message({
           <div className="mt-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
             <button
               onClick={onRegenerate}
-              className="rounded-md px-2 py-1 text-[11px] text-ink-400 hover:bg-white/5 hover:text-white"
+              className="rounded-md px-2 py-1 text-[11px] text-muted hover:bg-control hover:text-fg"
             >
               ↻ Regenerate
             </button>
             <button
               onClick={() => navigator.clipboard.writeText(parsed.visible)}
-              className="rounded-md px-2 py-1 text-[11px] text-ink-400 hover:bg-white/5 hover:text-white"
+              className="rounded-md px-2 py-1 text-[11px] text-muted hover:bg-control hover:text-fg"
             >
               Copy
             </button>
@@ -182,9 +182,9 @@ function ActivityBar({
 
   const chars = (activity as { chars?: number }).chars
   return (
-    <div className="mt-2 flex items-center gap-2 text-[12px] text-ink-400">
+    <div className="mt-2 flex items-center gap-2 text-[12px] text-muted">
       <span className="shimmer-text">{label}…</span>
-      <span className="tabular-nums text-ink-400/70">
+      <span className="tabular-nums text-faint">
         {chars != null && chars > 0 ? `${chars.toLocaleString()} chars · ` : ''}
         {formatElapsed(elapsed)}
       </span>
@@ -236,10 +236,10 @@ function ThinkingBlock({
   const [open, setOpen] = useState(inProgress)
   const labelClass = inProgress ? 'shimmer-text' : ''
   return (
-    <div className="mb-3 overflow-hidden rounded-lg border border-white/5 bg-white/[0.02]">
+    <div className="mb-3 overflow-hidden rounded-lg border border-line bg-panel">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-ink-400 hover:text-ink-100"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-muted hover:text-fg"
       >
         <svg
           viewBox="0 0 12 12"
@@ -251,7 +251,7 @@ function ThinkingBlock({
         <span className={labelClass}>{inProgress ? 'Thinking…' : 'Thought process'}</span>
       </button>
       {open && (
-        <div className="whitespace-pre-wrap border-t border-white/5 px-3 py-2 text-[12.5px] leading-relaxed text-ink-400">
+        <div className="whitespace-pre-wrap border-t border-line px-3 py-2 text-[12.5px] leading-relaxed text-muted">
           {content}
         </div>
       )}
@@ -320,14 +320,14 @@ function ToolCallView({ call }: { call: ToolCall }) {
   const { verb, target } = toolLabel(call)
   const ico = toolIcon(call.name)
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-white/5 bg-white/[0.02]">
+    <div className="mb-2 overflow-hidden rounded-lg border border-line bg-panel">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] text-ink-100 hover:bg-white/[0.02]"
+        className="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[12px] text-fg hover:bg-panel-strong"
       >
         <span className="flex h-5 w-5 shrink-0 items-center justify-center font-mono text-[13px]">
           {running ? (
-            <svg className="h-3.5 w-3.5 animate-spin text-white/70" viewBox="0 0 24 24" fill="none">
+            <svg className="h-3.5 w-3.5 animate-spin text-muted" viewBox="0 0 24 24" fill="none">
               <circle
                 cx="12"
                 cy="12"
@@ -338,36 +338,36 @@ function ToolCallView({ call }: { call: ToolCall }) {
               />
             </svg>
           ) : call.error ? (
-            <span className="text-red-400">×</span>
+            <span className="text-danger">×</span>
           ) : (
-            <span className="text-emerald-400/90">{ico}</span>
+            <span className="text-success">{ico}</span>
           )}
         </span>
         <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span className={running ? 'shimmer-text' : 'text-ink-100'}>
+          <span className={running ? 'shimmer-text' : 'text-fg'}>
             {running ? `${verb}…` : verb}
           </span>
           {target && (
-            <span className="truncate font-mono text-[11.5px] text-ink-400">{target}</span>
+            <span className="truncate font-mono text-[11.5px] text-muted">{target}</span>
           )}
         </span>
         <svg
           viewBox="0 0 12 12"
-          className={`h-2.5 w-2.5 shrink-0 text-ink-400 transition ${open ? 'rotate-90' : ''}`}
+          className={`h-2.5 w-2.5 shrink-0 text-muted transition ${open ? 'rotate-90' : ''}`}
           fill="currentColor"
         >
           <path d="M4 2l4 4-4 4V2z" />
         </svg>
       </button>
       {open && (
-        <div className="border-t border-white/5 px-3 py-2 font-mono text-[11.5px] text-ink-400">
+        <div className="border-t border-line px-3 py-2 font-mono text-[11.5px] text-muted">
           {call.name === 'write_file' && typeof call.args.content === 'string' ? (
             <pre className="max-h-[260px] overflow-auto whitespace-pre-wrap break-words text-ink-200">
               {String(call.args.content).slice(0, 4000)}
               {String(call.args.content).length > 4000 ? '\n…' : ''}
             </pre>
           ) : (
-            <div className="mb-1 text-ink-400/80">
+            <div className="mb-1 text-muted">
               args: {JSON.stringify(call.args).slice(0, 400)}
               {JSON.stringify(call.args).length > 400 ? '…' : ''}
             </div>
@@ -377,7 +377,7 @@ function ToolCallView({ call }: { call: ToolCall }) {
               {call.result}
             </pre>
           )}
-          {call.error && <div className="text-red-400">{call.error}</div>}
+          {call.error && <div className="text-danger">{call.error}</div>}
         </div>
       )}
     </div>

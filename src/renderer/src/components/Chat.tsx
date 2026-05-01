@@ -13,7 +13,8 @@ import {
   type ToolCall,
   type StreamChunk
 } from '@shared/types'
-import gemmaLogoUrl from '../assets/gemma-logo.png'
+import vibeLogoUrl from '../assets/vibe-logo.png'
+import type { ThemeMode } from '../theme'
 import Composer from './Composer'
 import Message from './Message'
 import Sidebar from './Sidebar'
@@ -22,6 +23,8 @@ import Canvas from './Canvas'
 interface Props {
   model: string
   providerConfig: AppProviderConfig
+  theme: ThemeMode
+  onToggleTheme: () => void
   onSwitchModel: (model: string) => void
   onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
 }
@@ -35,13 +38,17 @@ interface Conversation {
   canvasOpen?: boolean
 }
 
-const STORAGE_KEY = 'gemma-chat:conversations:v2'
+const STORAGE_KEY = 'vibe-chat:conversations:v2'
+const LEGACY_STORAGE_KEY = 'gemma-chat:conversations:v2'
 
 function loadConversations(): Conversation[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return []
     const arr = JSON.parse(raw) as Conversation[]
+    if (!localStorage.getItem(STORAGE_KEY)) {
+      localStorage.setItem(STORAGE_KEY, raw)
+    }
     return arr.map((c) => ({ ...c, mode: c.mode ?? 'code' }))
   } catch {
     return []
@@ -74,6 +81,8 @@ function newId(prefix: string): string {
 export default function Chat({
   model,
   providerConfig,
+  theme,
+  onToggleTheme,
   onSwitchModel,
   onProviderConfigChange
 }: Props) {
@@ -255,7 +264,7 @@ export default function Chat({
     activeConversation.canvasOpen !== false
 
   return (
-    <div className="flex h-full w-full">
+    <div className="flex h-full w-full bg-app text-fg">
       <Sidebar
         conversations={conversations}
         activeId={activeId}
@@ -271,8 +280,10 @@ export default function Chat({
             providerConfig={providerConfig}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
+            theme={theme}
             onToggleMode={toggleMode}
             onToggleCanvas={toggleCanvas}
+            onToggleTheme={onToggleTheme}
             onSwitchModel={onSwitchModel}
             onProviderConfigChange={onProviderConfigChange}
           />
@@ -298,7 +309,7 @@ export default function Chat({
                 ? 'Describe what to build — a webpage, component, or script…'
                 : providerConfig.selectedProvider === 'pi-ai'
                   ? 'Message your selected Pi AI provider…'
-                  : 'Message Gemma…'
+                  : 'Message Vibe…'
             }
           />
         </div>
@@ -354,7 +365,7 @@ function ResizableCanvas({
     >
       {/* Drag handle */}
       <div
-        className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize select-none transition-colors hover:bg-white/10 active:bg-white/20"
+        className="absolute left-0 top-0 z-10 h-full w-1 cursor-col-resize select-none transition-colors hover:bg-sidebar-active/30 active:bg-sidebar-active/50"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -374,8 +385,10 @@ function Header({
   providerConfig,
   mode,
   canvasOpen,
+  theme,
   onToggleMode,
   onToggleCanvas,
+  onToggleTheme,
   onSwitchModel,
   onProviderConfigChange
 }: {
@@ -383,8 +396,10 @@ function Header({
   providerConfig: AppProviderConfig
   mode: AgentMode
   canvasOpen: boolean
+  theme: ThemeMode
   onToggleMode: () => void
   onToggleCanvas: () => void
+  onToggleTheme: () => void
   onSwitchModel: (model: string) => void
   onProviderConfigChange: (config: AppProviderConfig) => Promise<void>
 }) {
@@ -409,9 +424,9 @@ function Header({
       : (AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model)
 
   return (
-    <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
+    <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-line bg-surface px-4">
       <div className="min-w-[8rem]" />
-      <div className="no-drag flex items-center gap-1 rounded-lg bg-white/[0.04] p-0.5 text-[12px]">
+      <div className="no-drag flex items-center gap-1 rounded-lg bg-control p-0.5 text-[12px]">
         <ModePill active={mode === 'chat'} onClick={() => mode === 'code' && onToggleMode()}>
           Chat
         </ModePill>
@@ -420,12 +435,13 @@ function Header({
         </ModePill>
       </div>
       <div className="no-drag flex shrink-0 items-center justify-end gap-2">
+        <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         <div className="relative" ref={pickerRef}>
           <button
             onClick={() => setPickerOpen((o) => !o)}
-            className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-[11.5px] text-ink-400 transition-all duration-200 hover:bg-white/[0.05] hover:text-ink-100"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-md px-2 py-1 text-[11.5px] text-muted transition-all duration-200 hover:bg-control-hover hover:text-fg"
           >
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-success" />
             {currentLabel}
             <svg viewBox="0 0 16 16" className={`h-3 w-3 transition-transform duration-200 ${pickerOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
@@ -448,7 +464,7 @@ function Header({
             onClick={onToggleCanvas}
             title={canvasOpen ? 'Hide canvas' : 'Show canvas'}
             className={`flex h-7 w-7 items-center justify-center rounded-md transition ${
-              canvasOpen ? 'bg-white/10 text-white' : 'text-ink-400 hover:bg-white/5 hover:text-white'
+              canvasOpen ? 'bg-control-hover text-fg' : 'text-muted hover:bg-control hover:text-fg'
             }`}
           >
             <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -459,6 +475,23 @@ function Header({
         )}
       </div>
     </div>
+  )
+}
+
+function ThemeToggle({ theme, onToggle }: { theme: ThemeMode; onToggle: () => void }) {
+  const next = theme === 'dark' ? 'light' : 'dark'
+  return (
+    <button
+      onClick={onToggle}
+      title={`Switch to ${next} theme`}
+      className="flex h-7 items-center gap-1 rounded-md border border-line bg-panel px-2 text-[11px] font-medium text-muted transition hover:bg-panel-strong hover:text-fg"
+    >
+      <span className="relative flex h-3 w-3 items-center justify-center">
+        <span className={`absolute h-2.5 w-2.5 rounded-full ${theme === 'dark' ? 'bg-accent-yellow' : 'bg-accent-aubergine'}`} />
+        {theme === 'dark' && <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-panel" />}
+      </span>
+      {theme === 'dark' ? 'Dark' : 'Light'}
+    </button>
   )
 }
 
@@ -652,24 +685,24 @@ function ProviderPicker({
   }
 
   return (
-    <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[420px] rounded-xl border border-white/10 bg-[#1a1a1a] p-2 shadow-2xl backdrop-blur-xl">
-      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-white/[0.04] p-1 text-[12px]">
+    <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-[420px] rounded-xl border border-line bg-panel p-2 shadow-2xl shadow-shadow/30 backdrop-blur-xl">
+      <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-control p-1 text-[12px]">
         <button
           onClick={() => saveRuntime('local-mlx')}
           className={`rounded-md px-2 py-1.5 font-medium transition ${
             providerConfig.selectedProvider === 'local-mlx'
-              ? 'bg-white/10 text-white'
-              : 'text-ink-300 hover:bg-white/[0.05] hover:text-white'
+              ? 'bg-sidebar-active text-white'
+              : 'text-muted hover:bg-control-hover hover:text-fg'
           }`}
         >
-          Local Gemma / MLX
+          Local MLX
         </button>
         <button
           onClick={() => saveRuntime('pi-ai')}
           className={`rounded-md px-2 py-1.5 font-medium transition ${
             providerConfig.selectedProvider === 'pi-ai'
-              ? 'bg-white/10 text-white'
-              : 'text-ink-300 hover:bg-white/[0.05] hover:text-white'
+              ? 'bg-sidebar-active text-white'
+              : 'text-muted hover:bg-control-hover hover:text-fg'
           }`}
         >
           Pi AI Provider
@@ -677,7 +710,7 @@ function ProviderPicker({
       </div>
 
       <div className="max-h-[70vh] overflow-y-auto pr-1">
-        <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
+        <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
           Local models
         </div>
         <div className="space-y-1">
@@ -689,16 +722,16 @@ function ProviderPicker({
               }}
               className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
                 providerConfig.selectedProvider === 'local-mlx' && m.name === model
-                  ? 'bg-white/[0.07] text-white'
-                  : 'text-ink-200 hover:bg-white/[0.04]'
+                  ? 'bg-control-hover text-fg'
+                  : 'text-ink-200 hover:bg-control'
               }`}
             >
               <div>
                 <div className="text-[12.5px] font-medium">{m.label}</div>
-                <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+                <div className="mt-0.5 text-[11px] text-muted">{m.size}</div>
               </div>
               {m.recommended && (
-                <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                <span className="rounded-full bg-control px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
                   rec
                 </span>
               )}
@@ -706,11 +739,11 @@ function ProviderPicker({
           ))}
         </div>
 
-        <div className="mt-4 border-t border-white/[0.07] pt-3">
-          <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
+        <div className="mt-4 border-t border-line pt-3">
+          <div className="mb-2 px-1 text-[10px] font-medium uppercase tracking-wider text-faint">
             Pi AI
           </div>
-          <label className="block text-[11px] text-ink-400">
+          <label className="block text-[11px] text-muted">
             Provider
             <select
               value={draft.providerId}
@@ -722,7 +755,7 @@ function ProviderPicker({
                   modelId: e.target.value === 'custom-openai-compatible' ? draft.modelId : ''
                 })
               }}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none focus:border-sidebar-active"
             >
               {piProviders.map((provider) => (
                 <option key={provider.id} value={provider.id}>
@@ -733,23 +766,23 @@ function ProviderPicker({
           </label>
 
           {draft.providerId === 'openai' && (
-            <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-2 text-[11px] text-ink-300">
+            <p className="mt-2 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
               Uses OpenAI API key.
             </p>
           )}
           {draft.providerId === 'openai-codex' && (
-            <p className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.03] p-2 text-[11px] text-ink-300">
+            <p className="mt-2 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
               Uses ChatGPT/Codex subscription OAuth, not OpenAI API key billing.
             </p>
           )}
 
-          <label className="mt-3 block text-[11px] text-ink-400">
+          <label className="mt-3 block text-[11px] text-muted">
             Catalog model
             <select
               value={models.some((m) => m.id === draft.modelId) ? draft.modelId : ''}
               onChange={(e) => updateDraft({ modelId: e.target.value })}
               disabled={models.length === 0}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25 disabled:opacity-50"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none focus:border-sidebar-active disabled:opacity-50"
             >
               <option value="">Custom model id</option>
               {models.map((m) => (
@@ -760,22 +793,22 @@ function ProviderPicker({
             </select>
           </label>
 
-          <label className="mt-2 block text-[11px] text-ink-400">
+          <label className="mt-2 block text-[11px] text-muted">
             Model id
             <input
               value={draft.modelId}
               onChange={(e) => updateDraft({ modelId: e.target.value })}
               placeholder={models[0]?.id ?? 'model-id'}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
             />
           </label>
 
-          <label className="mt-2 block text-[11px] text-ink-400">
+          <label className="mt-2 block text-[11px] text-muted">
             Auth method
             <select
               value={draft.authMode}
               onChange={(e) => updateDraft({ authMode: e.target.value as PiAiAuthMode })}
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none focus:border-white/25"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none focus:border-sidebar-active"
             >
               <option value="api-key">API key</option>
               <option value="oauth" disabled={!selectedProvider?.supportsOAuth}>
@@ -793,12 +826,12 @@ function ProviderPicker({
                 type="password"
                 autoComplete="off"
                 placeholder="Paste API key"
-                className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+                className="min-w-0 flex-1 rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
               />
               <button
                 onClick={saveApiKey}
                 disabled={!!busy}
-                className="rounded-lg border border-white/10 bg-white/[0.06] px-3 text-[12px] text-white hover:bg-white/[0.1] disabled:opacity-50"
+                className="rounded-lg border border-line bg-control px-3 text-[12px] text-fg hover:bg-control-hover disabled:opacity-50"
               >
                 Save key
               </button>
@@ -810,14 +843,14 @@ function ProviderPicker({
               <button
                 onClick={loginOAuth}
                 disabled={!!busy || !selectedProvider?.supportsOAuth}
-                className="rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-[12px] text-white hover:bg-white/[0.1] disabled:opacity-50"
+                className="rounded-lg border border-line bg-control px-3 py-2 text-[12px] text-fg hover:bg-control-hover disabled:opacity-50"
               >
                 Sign in
               </button>
               {authUrl && (
                 <button
                   onClick={() => window.api.openProviderAuthUrl(authUrl.url)}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-ink-100 hover:bg-white/[0.07]"
+                  className="rounded-lg border border-line bg-panel-strong px-3 py-2 text-[12px] text-fg hover:bg-control-hover"
                 >
                   Open browser
                 </button>
@@ -826,7 +859,7 @@ function ProviderPicker({
                 <button
                   onClick={refreshAuth}
                   disabled={!!busy}
-                  className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12px] text-ink-100 hover:bg-white/[0.07] disabled:opacity-50"
+                  className="rounded-lg border border-line bg-panel-strong px-3 py-2 text-[12px] text-fg hover:bg-control-hover disabled:opacity-50"
                 >
                   Refresh
                 </button>
@@ -834,18 +867,18 @@ function ProviderPicker({
             </div>
           )}
 
-          <label className="mt-3 block text-[11px] text-ink-400">
+          <label className="mt-3 block text-[11px] text-muted">
             Base URL
             <input
               value={draft.baseUrl ?? ''}
               onChange={(e) => updateDraft({ baseUrl: e.target.value || undefined })}
               placeholder="https://api.example.com/v1"
-              className="mt-1 w-full rounded-lg border border-white/10 bg-black/30 px-2 py-2 text-[12px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+              className="mt-1 w-full rounded-lg border border-line bg-surface px-2 py-2 text-[12px] text-fg outline-none placeholder:text-faint focus:border-sidebar-active"
             />
           </label>
 
           {showCompat && (
-            <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2">
+            <div className="mt-2 rounded-lg border border-line bg-control p-2">
               <div className="mb-1 text-[11px] font-medium text-ink-300">OpenAI-compatible compat</div>
               <CompatToggle
                 label="No developer role"
@@ -871,7 +904,7 @@ function ProviderPicker({
                   })
                 }
               />
-              <label className="mt-1 block text-[11px] text-ink-400">
+              <label className="mt-1 block text-[11px] text-muted">
                 Max tokens field
                 <select
                   value={draft.compat?.maxTokensField ?? ''}
@@ -887,7 +920,7 @@ function ProviderPicker({
                       }
                     })
                   }
-                  className="mt-1 w-full rounded-md border border-white/10 bg-black/30 px-2 py-1.5 text-[12px] text-white"
+                  className="mt-1 w-full rounded-md border border-line bg-surface px-2 py-1.5 text-[12px] text-fg"
                 >
                   <option value="">Auto</option>
                   <option value="max_tokens">max_tokens</option>
@@ -897,46 +930,46 @@ function ProviderPicker({
             </div>
           )}
 
-          <div className="mt-3 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11px] text-ink-300">
+          <div className="mt-3 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
             <div className="flex items-center justify-between gap-3">
               <span>{authStatus?.message ?? 'Checking auth...'}</span>
               <span
                 className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                  authStatus?.ready ? 'bg-emerald-400' : 'bg-amber-400'
+                  authStatus?.ready ? 'bg-success' : 'bg-warning'
                 }`}
               />
             </div>
             {authStatus?.maskedCredential && (
-              <div className="mt-1 text-ink-500">{authStatus.maskedCredential}</div>
+              <div className="mt-1 text-faint">{authStatus.maskedCredential}</div>
             )}
           </div>
 
           {authUrl?.instructions && (
-            <div className="mt-2 rounded-lg border border-white/[0.06] bg-white/[0.02] p-2 text-[11px] text-ink-300">
+            <div className="mt-2 rounded-lg border border-line bg-control p-2 text-[11px] text-ink-300">
               {authUrl.instructions}
             </div>
           )}
-          {message && <div className="mt-2 text-[11px] text-ink-400">{message}</div>}
+          {message && <div className="mt-2 text-[11px] text-muted">{message}</div>}
 
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={() => saveRuntime('pi-ai')}
               disabled={!!busy || !draft.modelId.trim()}
-              className="rounded-lg bg-white px-3 py-2 text-[12px] font-medium text-ink-900 hover:bg-white/90 disabled:opacity-50"
+              className="rounded-lg bg-action px-3 py-2 text-[12px] font-medium text-action-fg hover:opacity-90 disabled:opacity-50"
             >
               Save
             </button>
             <button
               onClick={testConnection}
               disabled={!!busy || !draft.modelId.trim()}
-              className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] text-white hover:bg-white/[0.08] disabled:opacity-50"
+              className="rounded-lg border border-line bg-control px-3 py-2 text-[12px] text-fg hover:bg-control-hover disabled:opacity-50"
             >
               Test connection
             </button>
             <button
               onClick={clearAuth}
               disabled={!!busy}
-              className="rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[12px] text-ink-300 hover:bg-white/[0.06] disabled:opacity-50"
+              className="rounded-lg border border-line bg-panel-strong px-3 py-2 text-[12px] text-muted hover:bg-control-hover disabled:opacity-50"
             >
               Clear credentials
             </button>
@@ -957,13 +990,13 @@ function CompatToggle({
   onChange: (checked: boolean) => void
 }) {
   return (
-    <label className="flex items-center justify-between gap-3 py-1 text-[11px] text-ink-400">
+    <label className="flex items-center justify-between gap-3 py-1 text-[11px] text-muted">
       {label}
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="h-3.5 w-3.5 accent-white"
+        className="h-3.5 w-3.5 accent-accent-aubergine"
       />
     </label>
   )
@@ -982,7 +1015,7 @@ function ModePill({
     <button
       onClick={onClick}
       className={`rounded-md px-3 py-1 font-medium transition-all duration-200 ease-out ${
-        active ? 'bg-white/10 text-white shadow-sm scale-[1.02]' : 'text-ink-400 hover:text-ink-100 scale-100'
+        active ? 'bg-sidebar-active text-white shadow-sm scale-[1.02]' : 'text-muted hover:text-fg scale-100'
       }`}
     >
       {children}
@@ -1079,14 +1112,14 @@ function EmptyState({ mode, providerLabel }: { mode: AgentMode; providerLabel: s
   return (
     <div className="anim-fade-in flex h-full flex-col items-center justify-center px-8">
       <div className="anim-fade-up mb-12 text-center">
-        <img src={gemmaLogoUrl} alt="Gemma" className="mx-auto mb-6 h-20 w-20" draggable={false} />
-        <div className="mb-3 text-[32px] font-semibold tracking-tight text-white">
+        <img src={vibeLogoUrl} alt="Vibe Chat" className="mx-auto mb-6 h-20 w-20" draggable={false} />
+        <div className="mb-3 text-[32px] font-semibold tracking-tight text-fg">
           {mode === 'code' ? 'What should we build?' : 'How can I help?'}
         </div>
-        <div className="text-sm text-ink-400">
+        <div className="text-sm text-muted">
           {mode === 'code'
             ? providerLabel === 'local'
-              ? 'Gemma will write files into a workspace and show a live preview on the right.'
+              ? 'Vibe will write files into a workspace and show a live preview on the right.'
               : `The selected Pi AI model will write files into a workspace and stream changes back.`
             : providerLabel === 'local'
               ? 'Running locally. Your messages never leave your Mac.'
@@ -1109,10 +1142,10 @@ function EmptyState({ mode, providerLabel }: { mode: AgentMode; providerLabel: s
                 ta.focus()
               }
             }}
-            className="anim-fade-up rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-left transition hover:border-white/10 hover:bg-white/[0.04] active:scale-[0.98]"
+            className="anim-fade-up rounded-xl border border-line bg-panel px-4 py-3 text-left transition hover:border-sidebar-active hover:bg-panel-strong active:scale-[0.98]"
           >
-            <div className="text-sm font-medium text-white">{s.title}</div>
-            <div className="mt-0.5 text-[12.5px] text-ink-400">{s.prompt}</div>
+            <div className="text-sm font-medium text-fg">{s.title}</div>
+            <div className="mt-0.5 text-[12.5px] text-muted">{s.prompt}</div>
           </button>
         ))}
       </div>

@@ -1,5 +1,5 @@
 import { AVAILABLE_MODELS, type SetupStatus } from '@shared/types'
-import gemmaLogoUrl from '../assets/gemma-logo.png'
+import vibeLogoUrl from '../assets/vibe-logo.png'
 
 interface Props {
   status: SetupStatus
@@ -45,9 +45,9 @@ export default function Setup({ status, model, onModelChange, onStart, onUsePiAi
       <div className="flex flex-1 items-center justify-center px-8">
         <div className="no-drag w-full max-w-md">
           <div className="mb-8 text-center">
-            <GemmaLogo className="mx-auto mb-5 h-20 w-20" />
+            <VibeLogo className="mx-auto mb-5 h-20 w-20" />
             <h1 className="text-[22px] font-semibold tracking-tight">Setting things up</h1>
-            <p className="mt-1.5 text-sm text-ink-400">
+            <p className="mt-1.5 text-sm text-muted">
               Everything runs locally. Nothing leaves your Mac.
             </p>
           </div>
@@ -56,13 +56,13 @@ export default function Setup({ status, model, onModelChange, onStart, onUsePiAi
 
           {isWorking && status.progress != null && (
             <div className="mt-6">
-              <div className="h-[3px] w-full overflow-hidden rounded-full bg-white/5">
+              <div className="h-[3px] w-full overflow-hidden rounded-full bg-control">
                 <div
-                  className="h-full rounded-full bg-white/70 transition-[width] duration-200 ease-out"
+                  className="h-full rounded-full bg-accent-green transition-[width] duration-200 ease-out"
                   style={{ width: `${Math.max(2, Math.round((status.progress ?? 0) * 100))}%` }}
                 />
               </div>
-              <div className="mt-2 flex justify-between text-[11px] tabular-nums text-ink-400">
+              <div className="mt-2 flex justify-between text-[11px] tabular-nums text-muted">
                 <span>{Math.round((status.progress ?? 0) * 100)}%</span>
                 {status.bytesDone != null && status.bytesTotal != null && (
                   <span>
@@ -74,12 +74,12 @@ export default function Setup({ status, model, onModelChange, onStart, onUsePiAi
           )}
 
           {status.stage === 'error' && (
-            <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <div className="mt-6 rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
               <div className="font-medium">Something went wrong</div>
-              <div className="mt-1 text-red-300/80">{status.error}</div>
+              <div className="mt-1 text-danger/80">{status.error}</div>
               <button
                 onClick={() => onStart(model)}
-                className="mt-3 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
+                className="mt-3 rounded-md border border-line bg-control px-3 py-1.5 text-xs hover:bg-control-hover"
               >
                 Try again
               </button>
@@ -109,16 +109,16 @@ function WelcomeScreen({
       <div className="flex flex-1 items-center justify-center px-8">
         <div className="no-drag w-full max-w-md">
           <div className="anim-fade-up mb-8 text-center">
-            <GemmaLogo className="mx-auto mb-5 h-24 w-24" />
-            <h1 className="text-[26px] font-semibold tracking-tight">Welcome to Gemma Chat</h1>
-            <p className="mt-2 text-[13.5px] leading-relaxed text-ink-400">
-              A local AI assistant, powered by Google's Gemma 4.
+            <VibeLogo className="mx-auto mb-5 h-24 w-24" />
+            <h1 className="text-[26px] font-semibold tracking-tight">Welcome to Vibe Chat</h1>
+            <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+              A local AI assistant for chat and vibe coding.
               <br />
               Runs 100% on your Mac. No account, no cloud.
             </p>
           </div>
 
-          <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-ink-400">
+          <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-faint">
             Pick a model
           </div>
           <div className="anim-stagger space-y-2">
@@ -128,22 +128,22 @@ function WelcomeScreen({
                 onClick={() => onModelChange(m.name)}
                 className={`anim-fade-up group relative w-full rounded-xl border px-4 py-3 text-left transition active:scale-[0.99] ${
                   model === m.name
-                    ? 'border-white/25 bg-white/[0.06]'
-                    : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
+                    ? 'border-sidebar-active bg-panel-strong'
+                    : 'border-line bg-panel hover:border-sidebar-active hover:bg-panel-strong'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{m.label}</span>
                     {m.recommended && (
-                      <span className="rounded-full bg-white/10 px-2 py-[1px] text-[10px] font-medium uppercase tracking-wider text-ink-100">
+                      <span className="rounded-full bg-control px-2 py-[1px] text-[10px] font-medium uppercase tracking-wider text-ink-100">
                         Recommended
                       </span>
                     )}
                   </div>
-                  <span className="text-xs tabular-nums text-ink-400">{m.size}</span>
+                  <span className="text-xs tabular-nums text-muted">{m.size}</span>
                 </div>
-                <div className="mt-1 text-[12.5px] leading-snug text-ink-400">
+                <div className="mt-1 text-[12.5px] leading-snug text-muted">
                   {m.description}
                 </div>
               </button>
@@ -152,17 +152,17 @@ function WelcomeScreen({
 
           <button
             onClick={() => onStart(selected.name)}
-            className="mt-6 w-full rounded-xl bg-white py-3 text-sm font-medium text-ink-900 transition hover:bg-white/90 active:scale-[0.99]"
+            className="mt-6 w-full rounded-xl bg-action py-3 text-sm font-medium text-action-fg transition hover:opacity-90 active:scale-[0.99]"
           >
             Download {selected.label} &nbsp;·&nbsp; {selected.size}
           </button>
           <button
             onClick={onUsePiAi}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-white/[0.03] py-3 text-sm font-medium text-white transition hover:border-white/20 hover:bg-white/[0.06] active:scale-[0.99]"
+            className="mt-2 w-full rounded-xl border border-line bg-panel py-3 text-sm font-medium text-fg transition hover:border-sidebar-active hover:bg-panel-strong active:scale-[0.99]"
           >
             Use Pi AI Provider
           </button>
-          <p className="mt-3 text-center text-[11px] text-ink-400">
+          <p className="mt-3 text-center text-[11px] text-muted">
             Local MLX works offline. Pi AI uses provider credentials and does not require MLX.
           </p>
         </div>
@@ -199,9 +199,9 @@ function StageList({ status }: { status: SetupStatus }) {
               <div
                 className={`text-sm transition ${
                   state === 'pending'
-                    ? 'text-ink-400'
+                    ? 'text-muted'
                     : state === 'active'
-                      ? 'text-white'
+                      ? 'text-fg'
                       : 'text-ink-200'
                 }`}
               >
@@ -218,7 +218,7 @@ function StageList({ status }: { status: SetupStatus }) {
 function StageDot({ state }: { state: 'pending' | 'active' | 'done' }) {
   if (state === 'done') {
     return (
-      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-white/85 text-ink-900">
+      <div className="flex h-5 w-5 items-center justify-center rounded-full bg-success text-white">
         <svg viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M2.5 6.5l2.5 2.5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -228,19 +228,19 @@ function StageDot({ state }: { state: 'pending' | 'active' | 'done' }) {
   if (state === 'active') {
     return (
       <div className="relative flex h-5 w-5 items-center justify-center">
-        <div className="absolute inset-0 animate-ping rounded-full bg-white/30" />
-        <div className="h-2 w-2 rounded-full bg-white" />
+        <div className="absolute inset-0 animate-ping rounded-full bg-accent-yellow/40" />
+        <div className="h-2 w-2 rounded-full bg-accent-yellow" />
       </div>
     )
   }
-  return <div className="h-5 w-5 rounded-full border border-white/15" />
+  return <div className="h-5 w-5 rounded-full border border-line" />
 }
 
-function GemmaLogo({ className }: { className?: string }) {
+function VibeLogo({ className }: { className?: string }) {
   return (
     <img
-      src={gemmaLogoUrl}
-      alt="Gemma"
+      src={vibeLogoUrl}
+      alt="Vibe Chat"
       className={className}
       draggable={false}
     />

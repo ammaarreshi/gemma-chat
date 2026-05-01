@@ -393,13 +393,13 @@ export function chatSystemPrompt(enableTools: boolean): string {
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
   if (!enableTools) {
     return [
-      "You are Gemma, an AI assistant running 100% locally on the user's Mac.",
+      "You are Vibe, an AI assistant running 100% locally on the user's Mac.",
       `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
       'Be clear, concise, and helpful. Use markdown for formatting when useful.'
     ].join('\n')
   }
   return [
-    "You are Gemma, an AI assistant running 100% locally on the user's Mac.",
+    "You are Vibe, an AI assistant running 100% locally on the user's Mac.",
     `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
     '',
     'TOOL USE',
@@ -428,13 +428,13 @@ export function piAiChatSystemPrompt(enableTools: boolean): string {
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
   if (!enableTools) {
     return [
-      'You are an AI assistant in Gemma Chat.',
+      'You are an AI assistant in Vibe Chat.',
       `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
       'Be clear, concise, and helpful. Use markdown for formatting when useful.'
     ].join('\n')
   }
   return [
-    'You are an AI assistant in Gemma Chat.',
+    'You are an AI assistant in Vibe Chat.',
     `Current date/time: ${now} (${day}). Timezone: ${tz()}.`,
     '',
     'TOOL USE',
@@ -462,7 +462,7 @@ export function codeSystemPrompt(workspacePath: string, previewHref: string): st
   const now = new Date().toISOString()
   const day = new Date().toLocaleDateString('en-US', { weekday: 'long' })
   return [
-    "You are Gemma, a local coding agent running entirely on the user's Mac.",
+    "You are Vibe, a local coding agent running entirely on the user's Mac.",
     `Date: ${now} (${day}). Workspace: ${workspacePath}. Preview: ${previewHref}`,
     '',
     'WHAT TO BUILD',
@@ -535,8 +535,8 @@ export function codeSystemPrompt(workspacePath: string, previewHref: string): st
 export function piAiCodeSystemPrompt(workspacePath: string, previewHref: string): string {
   const localPrompt = codeSystemPrompt(workspacePath, previewHref)
   return localPrompt.replace(
-    "You are Gemma, a local coding agent running entirely on the user's Mac.",
-    'You are an AI coding agent in Gemma Chat.'
+    "You are Vibe, a local coding agent running entirely on the user's Mac.",
+    'You are an AI coding agent in Vibe Chat.'
   )
 }
 

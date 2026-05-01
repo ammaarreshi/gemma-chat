@@ -65,7 +65,7 @@ function createWindow(): void {
     minHeight: 560,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0e0e0e',
+    backgroundColor: '#1f1421',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
@@ -498,8 +498,8 @@ function providerRuntimeList() {
   return [
     {
       id: 'local-mlx' as const,
-      label: 'Local Gemma / MLX',
-      description: 'Runs Gemma locally through the existing MLX runtime.'
+      label: 'Local MLX',
+      description: 'Runs local Gemma models through the existing MLX runtime.'
     },
     {
       id: 'pi-ai' as const,
@@ -535,10 +535,10 @@ async function testPiAiProvider(config: PiAiProviderConfig): Promise<{ ok: true 
 }
 
 app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('com.ammaar.gemmachat')
+  electronApp.setAppUserModelId('com.ammaar.vibechat')
   nativeTheme.themeSource = 'dark'
 
-  // Set dock icon (macOS) — ensures the Gemma icon shows in dev mode
+  // Set dock icon (macOS) so the Vibe Chat icon shows in dev mode.
   if (process.platform === 'darwin' && app.dock) {
     const dockIcon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon)

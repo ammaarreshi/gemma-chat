@@ -84,7 +84,7 @@ export async function startWorkspaceServer(): Promise<number> {
       const parts = url.pathname.split('/').filter(Boolean)
       if (parts.length === 0) {
         res.writeHead(200, { 'content-type': 'text/plain' })
-        res.end('gemma-chat workspace server')
+        res.end('vibe-chat workspace server')
         return
       }
       const id = parts[0]
@@ -186,7 +186,7 @@ function renderPlaceholder(_id: string): string {
 <div class="box">
   <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h10l6 6v10H4z"/><path d="M14 4v6h6"/></svg>
   <div class="title">No preview yet</div>
-  <div>Ask Gemma to create <code style="color:#bbb">index.html</code> to see it here.</div>
+  <div>Ask Vibe to create <code style="color:#bbb">index.html</code> to see it here.</div>
 </div>
 </body></html>`
 }
