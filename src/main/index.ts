@@ -308,7 +308,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
           }
           if (livePath && liveContentStart >= 0) {
             const now = Date.now()
-            if (now - lastLiveWrite > 500) {
+            if (now - lastLiveWrite > 450) {
               lastLiveWrite = now
               writeLivePartial()
             }
