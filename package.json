@@ -1,6 +1,6 @@
 {
   "name": "gemma-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local AI chat on your Mac, powered by Gemma 3",
   "main": "./out/main/index.js",
   "author": "Ammaar",

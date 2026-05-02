@@ -4,14 +4,30 @@ import { request as httpsRequest } from 'https'
 
 const DEFAULT_OLLAMA_URL = 'http://127.0.0.1:11434'
 const DEFAULT_OLLAMA_CHAT_TIMEOUT_MS = 30 * 60 * 1000
+let configuredOllamaUrl: string | null = null
 
-function baseUrl(): string {
-  const host = process.env.OLLAMA_HOST?.trim()
-  if (!host) return DEFAULT_OLLAMA_URL
+function normalizeOllamaUrl(raw?: string | null): string | null {
+  const host = raw?.trim()
+  if (!host) return null
+  if (/^\d+$/.test(host)) return `http://127.0.0.1:${host}`
+  if (/^:\d+$/.test(host)) return `http://127.0.0.1${host}`
   if (host.startsWith('http://') || host.startsWith('https://')) {
     return host.replace(/\/+$/, '')
   }
   return `http://${host.replace(/\/+$/, '')}`
+}
+
+function baseUrl(): string {
+  return configuredOllamaUrl ?? normalizeOllamaUrl(process.env.OLLAMA_HOST) ?? DEFAULT_OLLAMA_URL
+}
+
+export function setOllamaBaseUrl(raw?: string | null): string {
+  configuredOllamaUrl = normalizeOllamaUrl(raw)
+  return baseUrl()
+}
+
+export function getOllamaBaseUrl(): string {
+  return baseUrl()
 }
 
 async function fetchWithTimeout(url: string, timeoutMs = 3000): Promise<Response> {

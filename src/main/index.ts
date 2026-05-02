@@ -17,7 +17,13 @@ import {
   listLocalModels,
   type MLXChatMessage
 } from './mlx'
-import { ensureOllamaModel, listOllamaModels, ollamaChatStream } from './ollama'
+import {
+  ensureOllamaModel,
+  getOllamaBaseUrl,
+  listOllamaModels,
+  ollamaChatStream,
+  setOllamaBaseUrl
+} from './ollama'
 import {
   TOOLS,
   chatSystemPrompt,
@@ -556,6 +562,10 @@ app.whenReady().then(async () => {
       ...ollamaModels.map((model) => `${OLLAMA_MODEL_PREFIX}${model}`)
     ]
   })
+
+  ipcMain.handle('ollama:get-base-url', async () => getOllamaBaseUrl())
+
+  ipcMain.handle('ollama:set-base-url', async (_e, url: string) => setOllamaBaseUrl(url))
 
   ipcMain.handle('chat:send', async (_e, req: ChatRequest) => {
     const channel = `chat:stream:${req.conversationId}`

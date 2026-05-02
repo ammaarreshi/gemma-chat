@@ -402,42 +402,44 @@ function Header({
               <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
                 Switch model
               </div>
-              {models.map((m) => (
-                <button
-                  key={m.name}
-                  onClick={() => {
-                    setPickerOpen(false)
-                    if (m.name !== model) onSwitchModel(m.name)
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                    m.name === model
-                      ? 'bg-white/[0.07] text-white'
-                      : 'text-ink-200 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                      {m.label}
-                      {m.provider === 'ollama' && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          ollama
-                        </span>
-                      )}
-                      {m.recommended && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          rec
-                        </span>
-                      )}
+              <div className="max-h-80 overflow-y-auto pr-1">
+                {models.map((m) => (
+                  <button
+                    key={m.name}
+                    onClick={() => {
+                      setPickerOpen(false)
+                      if (m.name !== model) onSwitchModel(m.name)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                      m.name === model
+                        ? 'bg-white/[0.07] text-white'
+                        : 'text-ink-200 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium">
+                        <span className="truncate">{m.label}</span>
+                        {m.provider === 'ollama' && (
+                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            ollama
+                          </span>
+                        )}
+                        {m.recommended && (
+                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            rec
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
-                  </div>
-                  {m.name === model && (
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-              ))}
+                    {m.name === model && (
+                      <svg viewBox="0 0 16 16" className="ml-2 h-3.5 w-3.5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

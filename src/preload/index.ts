@@ -23,6 +23,11 @@ const api = {
 
   listLocalModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-local'),
 
+  getOllamaBaseUrl: (): Promise<string> => ipcRenderer.invoke('ollama:get-base-url'),
+
+  setOllamaBaseUrl: (url: string): Promise<string> =>
+    ipcRenderer.invoke('ollama:set-base-url', url),
+
   sendChat: async (req: ChatRequest, onChunk: (c: StreamChunk) => void): Promise<void> => {
     const { channel } = (await ipcRenderer.invoke('chat:send', req)) as { channel: string }
     return new Promise((resolve) => {

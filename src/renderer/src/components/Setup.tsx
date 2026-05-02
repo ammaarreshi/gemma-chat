@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   modelProvider,
   runtimeModelName,
@@ -10,7 +11,9 @@ interface Props {
   models: ModelInfo[]
   status: SetupStatus
   model: string
+  ollamaBaseUrl: string
   onModelChange: (m: string) => void
+  onOllamaBaseUrlChange: (url: string) => Promise<void>
   onStart: (model: string) => void
 }
 
@@ -26,7 +29,15 @@ function formatBytes(n?: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-export default function Setup({ models, status, model, onModelChange, onStart }: Props) {
+export default function Setup({
+  models,
+  status,
+  model,
+  ollamaBaseUrl,
+  onModelChange,
+  onOllamaBaseUrlChange,
+  onStart
+}: Props) {
   const isWorking =
     status.stage === 'checking' ||
     status.stage === 'installing-mlx' ||
@@ -39,7 +50,9 @@ export default function Setup({ models, status, model, onModelChange, onStart }:
       <WelcomeScreen
         models={models}
         model={model}
+        ollamaBaseUrl={ollamaBaseUrl}
         onModelChange={onModelChange}
+        onOllamaBaseUrlChange={onOllamaBaseUrlChange}
         onStart={onStart}
       />
     )
@@ -100,14 +113,19 @@ export default function Setup({ models, status, model, onModelChange, onStart }:
 function WelcomeScreen({
   models,
   model,
+  ollamaBaseUrl,
   onModelChange,
+  onOllamaBaseUrlChange,
   onStart
 }: {
   models: ModelInfo[]
   model: string
+  ollamaBaseUrl: string
   onModelChange: (m: string) => void
+  onOllamaBaseUrlChange: (url: string) => Promise<void>
   onStart: (model: string) => void
 }) {
+  const [ollamaUrlDraft, setOllamaUrlDraft] = useState(ollamaBaseUrl)
   const selected = models.find((m) => m.name === model) ?? models[0]
   const selectedProvider = selected ? modelProvider(selected.name) : 'mlx'
   const cta =
@@ -119,12 +137,20 @@ function WelcomeScreen({
       ? `Requires Ollama running locally with ${runtimeModelName(selected.name)} installed.`
       : "We'll install MLX runtime if needed. Model weights are cached locally."
 
+  useEffect(() => {
+    setOllamaUrlDraft(ollamaBaseUrl)
+  }, [ollamaBaseUrl])
+
+  async function applyOllamaUrl(): Promise<void> {
+    await onOllamaBaseUrlChange(ollamaUrlDraft)
+  }
+
   return (
     <div className="drag flex h-full w-full flex-col">
       <div className="h-9" />
       <div className="flex flex-1 items-center justify-center px-8">
-        <div className="no-drag w-full max-w-md">
-          <div className="anim-fade-up mb-8 text-center">
+        <div className="no-drag flex max-h-[calc(100vh-4rem)] w-full max-w-md flex-col">
+          <div className="anim-fade-up mb-6 shrink-0 text-center">
             <GemmaLogo className="mx-auto mb-5 h-24 w-24" />
             <h1 className="text-[26px] font-semibold tracking-tight">Welcome to Gemma Chat</h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-ink-400">
@@ -137,7 +163,10 @@ function WelcomeScreen({
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-ink-400">
             Pick a model
           </div>
-          <div className="anim-stagger max-h-[360px] space-y-2 overflow-y-auto pr-1">
+          <div
+            className="anim-stagger min-h-0 space-y-2 overflow-y-auto pr-1"
+            style={{ maxHeight: 'min(360px, 38vh)' }}
+          >
             {models.map((m) => (
               <button
                 key={m.name}
@@ -167,8 +196,38 @@ function WelcomeScreen({
             ))}
           </div>
 
+          {selectedProvider === 'ollama' && (
+            <div className="mt-4 shrink-0">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-400">
+                Ollama host
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={ollamaUrlDraft}
+                  onChange={(e) => setOllamaUrlDraft(e.target.value)}
+                  onBlur={applyOllamaUrl}
+                  placeholder="http://127.0.0.1:11434"
+                  className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12.5px] text-ink-100 outline-none transition placeholder:text-ink-500 focus:border-white/25 focus:bg-white/[0.05]"
+                />
+                <button
+                  type="button"
+                  onClick={applyOllamaUrl}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] font-medium text-ink-200 transition hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
+                >
+                  Apply
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-ink-400">
+                Use a host like 127.0.0.1:11435, or just enter the port number.
+              </p>
+            </div>
+          )}
+
           <button
-            onClick={() => onStart(selected.name)}
+            onClick={async () => {
+              if (selectedProvider === 'ollama') await applyOllamaUrl()
+              onStart(selected.name)
+            }}
             className="mt-6 w-full rounded-xl bg-white py-3 text-sm font-medium text-ink-900 transition hover:bg-white/90 active:scale-[0.99]"
           >
             {cta}

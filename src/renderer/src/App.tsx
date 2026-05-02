@@ -14,6 +14,8 @@ import Chat from './components/Chat'
 
 type RuntimeStatus = { hasMLX: boolean; hasOllama: boolean }
 
+const OLLAMA_URL_STORAGE_KEY = 'gemma-chat:ollama-base-url:v1'
+
 type AppState =
   | { phase: 'boot' }
   | { phase: 'setup'; status: SetupStatus; model: string }
@@ -23,6 +25,7 @@ type AppState =
 export default function App() {
   const [state, setState] = useState<AppState>({ phase: 'boot' })
   const [models, setModels] = useState<ModelInfo[]>(AVAILABLE_MODELS)
+  const [ollamaBaseUrl, setOllamaBaseUrl] = useState(() => loadOllamaBaseUrl())
   const setupModelRef = useRef(DEFAULT_OLLAMA_MODEL)
 
   useEffect(() => {
@@ -60,10 +63,8 @@ export default function App() {
         })
       })
 
-      const [local, runtimes] = await Promise.all([
-        window.api.listLocalModels(),
-        window.api.checkMLX()
-      ])
+      await window.api.setOllamaBaseUrl(ollamaBaseUrl)
+      const { local, runtimes } = await refreshRuntimeModels()
       const mergedModels = mergeLocalModels(local)
       const initialModel = pickInitialModel(local, runtimes)
       setupModelRef.current = initialModel
@@ -94,6 +95,22 @@ export default function App() {
     }
   }, [])
 
+  async function refreshRuntimeModels(): Promise<{ local: string[]; runtimes: RuntimeStatus }> {
+    const [local, runtimes] = await Promise.all([
+      window.api.listLocalModels(),
+      window.api.checkMLX()
+    ])
+    setModels(mergeLocalModels(local))
+    return { local, runtimes }
+  }
+
+  async function handleOllamaBaseUrlChange(value: string): Promise<void> {
+    setOllamaBaseUrl(value)
+    saveOllamaBaseUrl(value)
+    await window.api.setOllamaBaseUrl(value)
+    await refreshRuntimeModels()
+  }
+
   function handleSwitchModel(newModel: string): void {
     setState((prev) => {
       if (prev.phase !== 'ready') return prev
@@ -119,9 +136,11 @@ export default function App() {
           models={models}
           status={state.status}
           model={state.model}
+          ollamaBaseUrl={ollamaBaseUrl}
           onModelChange={(m) =>
             setState((s) => (s.phase === 'setup' ? { ...s, model: m } : s))
           }
+          onOllamaBaseUrlChange={handleOllamaBaseUrlChange}
           onStart={(model) => {
             setupModelRef.current = model
             setState({
@@ -150,6 +169,27 @@ export default function App() {
       <Chat model={state.model} models={models} onSwitchModel={handleSwitchModel} />
     </div>
   )
+}
+
+function loadOllamaBaseUrl(): string {
+  try {
+    return localStorage.getItem(OLLAMA_URL_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function saveOllamaBaseUrl(value: string): void {
+  try {
+    const trimmed = value.trim()
+    if (trimmed) {
+      localStorage.setItem(OLLAMA_URL_STORAGE_KEY, trimmed)
+    } else {
+      localStorage.removeItem(OLLAMA_URL_STORAGE_KEY)
+    }
+  } catch {
+    // ignore
+  }
 }
 
 function mergeLocalModels(local: string[]): ModelInfo[] {
