@@ -1,10 +1,19 @@
-import { AVAILABLE_MODELS, type SetupStatus } from '@shared/types'
+import { useEffect, useState } from 'react'
+import {
+  modelProvider,
+  runtimeModelName,
+  type ModelInfo,
+  type SetupStatus
+} from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 
 interface Props {
+  models: ModelInfo[]
   status: SetupStatus
   model: string
+  ollamaBaseUrl: string
   onModelChange: (m: string) => void
+  onOllamaBaseUrlChange: (url: string) => Promise<void>
   onStart: (model: string) => void
 }
 
@@ -20,15 +29,33 @@ function formatBytes(n?: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-export default function Setup({ status, model, onModelChange, onStart }: Props) {
+export default function Setup({
+  models,
+  status,
+  model,
+  ollamaBaseUrl,
+  onModelChange,
+  onOllamaBaseUrlChange,
+  onStart
+}: Props) {
   const isWorking =
     status.stage === 'checking' ||
     status.stage === 'installing-mlx' ||
     status.stage === 'starting-mlx' ||
+    status.stage === 'connecting-ollama' ||
     status.stage === 'downloading-model'
 
   if (status.stage === 'checking' && status.message === 'Welcome') {
-    return <WelcomeScreen model={model} onModelChange={onModelChange} onStart={onStart} />
+    return (
+      <WelcomeScreen
+        models={models}
+        model={model}
+        ollamaBaseUrl={ollamaBaseUrl}
+        onModelChange={onModelChange}
+        onOllamaBaseUrlChange={onOllamaBaseUrlChange}
+        onStart={onStart}
+      />
+    )
   }
 
   return (
@@ -40,7 +67,7 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
             <GemmaLogo className="mx-auto mb-5 h-20 w-20" />
             <h1 className="text-[22px] font-semibold tracking-tight">Setting things up</h1>
             <p className="mt-1.5 text-sm text-ink-400">
-              Everything runs locally. Nothing leaves your Mac.
+              Everything runs locally. Nothing leaves your machine.
             </p>
           </div>
 
@@ -84,35 +111,63 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
 }
 
 function WelcomeScreen({
+  models,
   model,
+  ollamaBaseUrl,
   onModelChange,
+  onOllamaBaseUrlChange,
   onStart
 }: {
+  models: ModelInfo[]
   model: string
+  ollamaBaseUrl: string
   onModelChange: (m: string) => void
+  onOllamaBaseUrlChange: (url: string) => Promise<void>
   onStart: (model: string) => void
 }) {
-  const selected = AVAILABLE_MODELS.find((m) => m.name === model) ?? AVAILABLE_MODELS[1]
+  const [ollamaUrlDraft, setOllamaUrlDraft] = useState(ollamaBaseUrl)
+  const selected = models.find((m) => m.name === model) ?? models[0]
+  const selectedProvider = selected ? modelProvider(selected.name) : 'mlx'
+  const cta =
+    selectedProvider === 'ollama'
+      ? `Use ${selected.label}`
+      : `Download ${selected.label}  ·  ${selected.size}`
+  const note =
+    selectedProvider === 'ollama'
+      ? `Requires Ollama running locally with ${runtimeModelName(selected.name)} installed.`
+      : "We'll install MLX runtime if needed. Model weights are cached locally."
+
+  useEffect(() => {
+    setOllamaUrlDraft(ollamaBaseUrl)
+  }, [ollamaBaseUrl])
+
+  async function applyOllamaUrl(): Promise<void> {
+    await onOllamaBaseUrlChange(ollamaUrlDraft)
+  }
+
   return (
     <div className="drag flex h-full w-full flex-col">
       <div className="h-9" />
       <div className="flex flex-1 items-center justify-center px-8">
-        <div className="no-drag w-full max-w-md">
-          <div className="anim-fade-up mb-8 text-center">
+        <div className="no-drag flex max-h-[calc(100vh-4rem)] w-full max-w-md flex-col">
+          <div className="anim-fade-up mb-6 shrink-0 text-center">
             <GemmaLogo className="mx-auto mb-5 h-24 w-24" />
             <h1 className="text-[26px] font-semibold tracking-tight">Welcome to Gemma Chat</h1>
             <p className="mt-2 text-[13.5px] leading-relaxed text-ink-400">
-              A local AI assistant, powered by Google's Gemma 4.
+              A local AI assistant, powered by Gemma.
               <br />
-              Runs 100% on your Mac. No account, no cloud.
+              No account, no cloud.
             </p>
           </div>
 
           <div className="mb-3 text-[11px] font-medium uppercase tracking-wider text-ink-400">
             Pick a model
           </div>
-          <div className="anim-stagger space-y-2">
-            {AVAILABLE_MODELS.map((m) => (
+          <div
+            className="anim-stagger min-h-0 space-y-2 overflow-y-auto pr-1"
+            style={{ maxHeight: 'min(360px, 38vh)' }}
+          >
+            {models.map((m) => (
               <button
                 key={m.name}
                 onClick={() => onModelChange(m.name)}
@@ -122,16 +177,17 @@ function WelcomeScreen({
                     : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{m.label}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="truncate font-medium">{m.label}</span>
+                    <ProviderBadge provider={m.provider} />
                     {m.recommended && (
                       <span className="rounded-full bg-white/10 px-2 py-[1px] text-[10px] font-medium uppercase tracking-wider text-ink-100">
                         Recommended
                       </span>
                     )}
                   </div>
-                  <span className="text-xs tabular-nums text-ink-400">{m.size}</span>
+                  <span className="shrink-0 text-xs tabular-nums text-ink-400">{m.size}</span>
                 </div>
                 <div className="mt-1 text-[12.5px] leading-snug text-ink-400">
                   {m.description}
@@ -140,15 +196,43 @@ function WelcomeScreen({
             ))}
           </div>
 
+          {selectedProvider === 'ollama' && (
+            <div className="mt-4 shrink-0">
+              <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-ink-400">
+                Ollama host
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={ollamaUrlDraft}
+                  onChange={(e) => setOllamaUrlDraft(e.target.value)}
+                  onBlur={applyOllamaUrl}
+                  placeholder="http://127.0.0.1:11434"
+                  className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[12.5px] text-ink-100 outline-none transition placeholder:text-ink-500 focus:border-white/25 focus:bg-white/[0.05]"
+                />
+                <button
+                  type="button"
+                  onClick={applyOllamaUrl}
+                  className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-[12px] font-medium text-ink-200 transition hover:border-white/20 hover:bg-white/[0.07] hover:text-white"
+                >
+                  Apply
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-ink-400">
+                Use a host like 127.0.0.1:11435, or just enter the port number.
+              </p>
+            </div>
+          )}
+
           <button
-            onClick={() => onStart(selected.name)}
+            onClick={async () => {
+              if (selectedProvider === 'ollama') await applyOllamaUrl()
+              onStart(selected.name)
+            }}
             className="mt-6 w-full rounded-xl bg-white py-3 text-sm font-medium text-ink-900 transition hover:bg-white/90 active:scale-[0.99]"
           >
-            Download {selected.label} &nbsp;·&nbsp; {selected.size}
+            {cta}
           </button>
-          <p className="mt-3 text-center text-[11px] text-ink-400">
-            We'll install MLX runtime if needed. Model weights are cached locally.
-          </p>
+          <p className="mt-3 text-center text-[11px] text-ink-400">{note}</p>
         </div>
       </div>
     </div>
@@ -156,19 +240,22 @@ function WelcomeScreen({
 }
 
 function StageList({ status }: { status: SetupStatus }) {
-  const stages: Array<{ key: SetupStatus['stage']; label: string }> = [
-    { key: 'installing-mlx', label: 'Install MLX runtime' },
-    { key: 'starting-mlx', label: 'Start runtime & load model' },
-    { key: 'downloading-model', label: 'Download model' },
-    { key: 'ready', label: 'Ready to chat' }
-  ]
-  const order: SetupStatus['stage'][] = [
-    'checking',
-    'installing-mlx',
-    'starting-mlx',
-    'downloading-model',
-    'ready'
-  ]
+  const isOllama =
+    status.stage === 'connecting-ollama' || status.message.toLowerCase().includes('ollama')
+  const stages: Array<{ key: SetupStatus['stage']; label: string }> = isOllama
+    ? [
+        { key: 'connecting-ollama', label: 'Connect to Ollama' },
+        { key: 'ready', label: 'Ready to chat' }
+      ]
+    : [
+        { key: 'installing-mlx', label: 'Install MLX runtime' },
+        { key: 'starting-mlx', label: 'Start runtime & load model' },
+        { key: 'downloading-model', label: 'Download model' },
+        { key: 'ready', label: 'Ready to chat' }
+      ]
+  const order: SetupStatus['stage'][] = isOllama
+    ? ['checking', 'connecting-ollama', 'ready']
+    : ['checking', 'installing-mlx', 'starting-mlx', 'downloading-model', 'ready']
   const currentIdx = order.indexOf(status.stage)
 
   return (
@@ -199,6 +286,14 @@ function StageList({ status }: { status: SetupStatus }) {
   )
 }
 
+function ProviderBadge({ provider }: { provider: ModelInfo['provider'] }) {
+  return (
+    <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+      {provider}
+    </span>
+  )
+}
+
 function StageDot({ state }: { state: 'pending' | 'active' | 'done' }) {
   if (state === 'done') {
     return (
@@ -221,12 +316,5 @@ function StageDot({ state }: { state: 'pending' | 'active' | 'done' }) {
 }
 
 function GemmaLogo({ className }: { className?: string }) {
-  return (
-    <img
-      src={gemmaLogoUrl}
-      alt="Gemma"
-      className={className}
-      draggable={false}
-    />
-  )
+  return <img src={gemmaLogoUrl} alt="Gemma" className={className} draggable={false} />
 }

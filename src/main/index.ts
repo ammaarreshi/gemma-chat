@@ -1,17 +1,29 @@
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, session, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { AVAILABLE_MODELS } from '@shared/types'
+import {
+  AVAILABLE_MODELS,
+  OLLAMA_MODEL_PREFIX,
+  modelProvider,
+  runtimeModelName,
+  type RuntimeProvider
+} from '@shared/types'
 import {
   locateMLX,
   installMLX,
   startServer,
   stopServer,
-  hasModel,
   chatStream,
   listLocalModels,
   type MLXChatMessage
 } from './mlx'
+import {
+  ensureOllamaModel,
+  getOllamaBaseUrl,
+  listOllamaModels,
+  ollamaChatStream,
+  setOllamaBaseUrl
+} from './ollama'
 import {
   TOOLS,
   chatSystemPrompt,
@@ -35,6 +47,12 @@ import {
 import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
+const appIconPath = join(
+  __dirname,
+  '../../Assets 3.xcassets',
+  'AppIcon.appiconset',
+  '1024-mac.png'
+)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -49,7 +67,7 @@ function createWindow(): void {
     trafficLightPosition: { x: 14, y: 14 },
     vibrancy: 'under-window',
     visualEffectState: 'active',
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: appIconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
@@ -81,11 +99,18 @@ function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
 }
 
-let mlxPython: string | null = null
+let activeProvider: RuntimeProvider | null = null
+
+function modelLabel(model: string): string {
+  return AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? runtimeModelName(model)
+}
 
 async function ensureMLXRunning(model: string): Promise<string> {
   let mlx = locateMLX()
   if (!mlx) {
+    if (process.platform === 'win32') {
+      throw new Error('MLX is only available on Apple Silicon/macOS. Choose an Ollama model on Windows.')
+    }
     throw new Error(
       'Python 3.10–3.13 not found. Install via Homebrew: brew install python@3.13'
     )
@@ -107,9 +132,7 @@ async function ensureMLXRunning(model: string): Promise<string> {
     })
   }
 
-  mlxPython = pythonToUse
-
-  const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const label = modelLabel(model)
   send('setup:status', { stage: 'starting-mlx', message: 'Starting model runtime…' })
   send('setup:status', {
     stage: 'downloading-model',
@@ -122,13 +145,36 @@ async function ensureMLXRunning(model: string): Promise<string> {
       progress: p.progress
     })
   })
+  activeProvider = 'mlx'
   return pythonToUse
+}
+
+async function ensureOllamaRunning(model: string): Promise<void> {
+  if (activeProvider === 'mlx') {
+    stopServer()
+  }
+
+  const label = modelLabel(model)
+  send('setup:status', {
+    stage: 'connecting-ollama',
+    message: `Connecting to Ollama for ${label}...`
+  })
+  await ensureOllamaModel(model)
+  activeProvider = 'ollama'
+}
+
+async function ensureRuntimeRunning(model: string): Promise<void> {
+  if (modelProvider(model) === 'ollama') {
+    await ensureOllamaRunning(model)
+    return
+  }
+  await ensureMLXRunning(model)
 }
 
 async function handleSetup(model: string): Promise<void> {
   try {
     send('setup:status', { stage: 'checking', message: 'Checking system…' })
-    await ensureMLXRunning(model)
+    await ensureRuntimeRunning(model)
     send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
   } catch (e) {
     send('setup:status', {
@@ -253,11 +299,20 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
         }
       }
 
-      streamLoop: for await (const chunk of chatStream({
-        model: req.model,
-        messages: baseMessages,
-        signal: abort.signal
-      })) {
+      const stream =
+        modelProvider(req.model) === 'ollama'
+          ? ollamaChatStream({
+              model: req.model,
+              messages: baseMessages,
+              signal: abort.signal
+            })
+          : chatStream({
+              model: req.model,
+              messages: baseMessages,
+              signal: abort.signal
+            })
+
+      streamLoop: for await (const chunk of stream) {
         if (chunk.content) {
           if (firstToken) {
             firstToken = false
@@ -453,7 +508,7 @@ app.whenReady().then(async () => {
 
   // Set dock icon (macOS) — ensures the Gemma icon shows in dev mode
   if (process.platform === 'darwin' && app.dock) {
-    const dockIcon = nativeImage.createFromPath(join(__dirname, '../../build/icon.png'))
+    const dockIcon = nativeImage.createFromPath(appIconPath)
     if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon)
   }
 
@@ -477,23 +532,13 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('model:switch', async (_e, model: string) => {
-    const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+    const label = modelLabel(model)
     send('setup:status', {
-      stage: 'downloading-model',
+      stage: modelProvider(model) === 'ollama' ? 'connecting-ollama' : 'downloading-model',
       message: `Switching to ${label}…`
     })
     try {
-      await stopServer()
-      if (!mlxPython) {
-        throw new Error('MLX Python path not available. Please restart the app.')
-      }
-      await startServer(mlxPython, model, (p) => {
-        send('setup:status', {
-          stage: 'downloading-model',
-          message: p.message,
-          progress: p.progress
-        })
-      })
+      await ensureRuntimeRunning(model)
       send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
     } catch (e) {
       send('setup:status', {
@@ -506,12 +551,21 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('setup:status', async () => {
     const mlx = locateMLX()
-    return { hasMLX: !!(mlx && mlx.installed) }
+    const ollamaModels = await listOllamaModels()
+    return { hasMLX: !!(mlx && mlx.installed), hasOllama: ollamaModels.length > 0 }
   })
 
   ipcMain.handle('models:list-local', async () => {
-    return listLocalModels()
+    const [mlxModels, ollamaModels] = await Promise.all([listLocalModels(), listOllamaModels()])
+    return [
+      ...mlxModels,
+      ...ollamaModels.map((model) => `${OLLAMA_MODEL_PREFIX}${model}`)
+    ]
   })
+
+  ipcMain.handle('ollama:get-base-url', async () => getOllamaBaseUrl())
+
+  ipcMain.handle('ollama:set-base-url', async (_e, url: string) => setOllamaBaseUrl(url))
 
   ipcMain.handle('chat:send', async (_e, req: ChatRequest) => {
     const channel = `chat:stream:${req.conversationId}`

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AVAILABLE_MODELS, type AgentMode, type ChatMessage, type ToolCall, type StreamChunk } from '@shared/types'
+import {
+  type AgentMode,
+  type ChatMessage,
+  type ModelInfo,
+  type ToolCall,
+  type StreamChunk
+} from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 import Composer from './Composer'
 import Message from './Message'
@@ -8,6 +14,7 @@ import Canvas from './Canvas'
 
 interface Props {
   model: string
+  models: ModelInfo[]
   onSwitchModel: (model: string) => void
 }
 
@@ -56,7 +63,7 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export default function Chat({ model, onSwitchModel }: Props) {
+export default function Chat({ model, models, onSwitchModel }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations()
     return loaded.length ? loaded : [newConversation()]
@@ -240,6 +247,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
             model={model}
+            models={models}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
             onToggleMode={toggleMode}
@@ -334,6 +342,7 @@ function ResizableCanvas({
 
 function Header({
   model,
+  models,
   mode,
   canvasOpen,
   onToggleMode,
@@ -341,6 +350,7 @@ function Header({
   onSwitchModel
 }: {
   model: string
+  models: ModelInfo[]
   mode: AgentMode
   canvasOpen: boolean
   onToggleMode: () => void
@@ -362,7 +372,7 @@ function Header({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [pickerOpen])
 
-  const currentLabel = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const currentLabel = models.find((m) => m.name === model)?.label ?? model
 
   return (
     <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
@@ -392,37 +402,44 @@ function Header({
               <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
                 Switch model
               </div>
-              {AVAILABLE_MODELS.map((m) => (
-                <button
-                  key={m.name}
-                  onClick={() => {
-                    setPickerOpen(false)
-                    if (m.name !== model) onSwitchModel(m.name)
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                    m.name === model
-                      ? 'bg-white/[0.07] text-white'
-                      : 'text-ink-200 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                      {m.label}
-                      {m.recommended && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          rec
-                        </span>
-                      )}
+              <div className="max-h-80 overflow-y-auto pr-1">
+                {models.map((m) => (
+                  <button
+                    key={m.name}
+                    onClick={() => {
+                      setPickerOpen(false)
+                      if (m.name !== model) onSwitchModel(m.name)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                      m.name === model
+                        ? 'bg-white/[0.07] text-white'
+                        : 'text-ink-200 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex min-w-0 items-center gap-1.5 text-[12.5px] font-medium">
+                        <span className="truncate">{m.label}</span>
+                        {m.provider === 'ollama' && (
+                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            ollama
+                          </span>
+                        )}
+                        {m.recommended && (
+                          <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            rec
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
                     </div>
-                    <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
-                  </div>
-                  {m.name === model && (
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-              ))}
+                    {m.name === model && (
+                      <svg viewBox="0 0 16 16" className="ml-2 h-3.5 w-3.5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -560,7 +577,7 @@ function EmptyState({ mode }: { mode: AgentMode }) {
         <div className="text-sm text-ink-400">
           {mode === 'code'
             ? 'Gemma will write files into a workspace and show a live preview on the right.'
-            : 'Running locally. Your messages never leave your Mac.'}
+            : 'Running locally. Your messages never leave your machine.'}
         </div>
       </div>
       <div className="anim-stagger grid w-full max-w-2xl grid-cols-1 gap-2 sm:grid-cols-2">

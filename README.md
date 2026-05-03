@@ -12,6 +12,19 @@
 
 ---
 
+## Windows Preview
+
+This fork adds a Windows preview build that runs Gemma Chat locally through [Ollama](https://ollama.com) instead of Apple's MLX runtime.
+
+- Download the unsigned installer from the [Windows Ollama Preview release](https://github.com/daveroyal/gemma-chat/releases/tag/windows-ollama-v0.1.0).
+- Install and start Ollama, then run `ollama pull gemma4:31b`.
+- Launch Gemma Chat and choose the installed `gemma4:31b` Ollama model.
+- If Ollama is not listening on the default `http://127.0.0.1:11434`, change the
+  **Ollama host** field on the setup screen. You can enter a full URL like
+  `http://127.0.0.1:11435`, `127.0.0.1:11435`, or just `11435`.
+
+> This Windows build is unsigned, so Windows SmartScreen may show a warning before install.
+
 <img width="960" height="593" alt="Gemma4-Vibecoding" src="https://github.com/user-attachments/assets/b4149e63-48df-456e-8007-c607b7d46f37" />
 
 

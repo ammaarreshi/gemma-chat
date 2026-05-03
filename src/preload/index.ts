@@ -12,7 +12,8 @@ const api = {
 
   switchModel: (model: string): Promise<void> => ipcRenderer.invoke('model:switch', model),
 
-  checkMLX: (): Promise<{ hasMLX: boolean }> => ipcRenderer.invoke('setup:status'),
+  checkMLX: (): Promise<{ hasMLX: boolean; hasOllama: boolean }> =>
+    ipcRenderer.invoke('setup:status'),
 
   onSetupStatus: (cb: (s: SetupStatus) => void): (() => void) => {
     const listener = (_: IpcRendererEvent, s: SetupStatus): void => cb(s)
@@ -21,6 +22,11 @@ const api = {
   },
 
   listLocalModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-local'),
+
+  getOllamaBaseUrl: (): Promise<string> => ipcRenderer.invoke('ollama:get-base-url'),
+
+  setOllamaBaseUrl: (url: string): Promise<string> =>
+    ipcRenderer.invoke('ollama:set-base-url', url),
 
   sendChat: async (req: ChatRequest, onChunk: (c: StreamChunk) => void): Promise<void> => {
     const { channel } = (await ipcRenderer.invoke('chat:send', req)) as { channel: string }

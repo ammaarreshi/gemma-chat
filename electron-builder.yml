@@ -2,6 +2,7 @@ appId: com.ammaar.gemmachat
 productName: Gemma Chat
 directories:
   buildResources: build
+afterPack: build/afterPack.cjs
 files:
   - '!**/.vscode/*'
   - '!src/*'
@@ -19,6 +20,20 @@ mac:
   category: public.app-category.productivity
   hardenedRuntime: true
   gatekeeperAssess: false
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  signAndEditExecutable: false
+  verifyUpdateCodeSignature: false
+nsis:
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
 dmg:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
