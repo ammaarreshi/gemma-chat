@@ -1,13 +1,37 @@
 import { useEffect, useState } from 'react'
-import { DEFAULT_MODEL, type SetupStatus } from '@shared/types'
+import { DEFAULT_MODEL, type RuntimeConfig, type SetupStatus } from '@shared/types'
 import Setup from './components/Setup'
 import Chat from './components/Chat'
 
 type AppState =
   | { phase: 'boot' }
-  | { phase: 'setup'; status: SetupStatus; model: string }
-  | { phase: 'ready'; model: string }
-  | { phase: 'switching'; model: string; toModel: string; status: SetupStatus }
+  | { phase: 'setup'; status: SetupStatus; runtime: RuntimeConfig }
+  | { phase: 'ready'; runtime: RuntimeConfig }
+  | { phase: 'switching'; runtime: RuntimeConfig; toRuntime: RuntimeConfig; status: SetupStatus }
+
+const RUNTIME_STORAGE_KEY = 'gemma-chat:runtime:v1'
+const DEFAULT_RUNTIME: RuntimeConfig = { provider: 'mlx', model: DEFAULT_MODEL }
+
+function loadRuntime(): RuntimeConfig {
+  try {
+    const raw = localStorage.getItem(RUNTIME_STORAGE_KEY)
+    if (!raw) return DEFAULT_RUNTIME
+    const parsed = JSON.parse(raw) as RuntimeConfig
+    if (parsed.provider === 'lm-studio' && parsed.model && parsed.endpoint) return parsed
+    if (parsed.provider === 'mlx' && parsed.model) return parsed
+  } catch {
+    // ignore
+  }
+  return DEFAULT_RUNTIME
+}
+
+function saveRuntime(runtime: RuntimeConfig): void {
+  try {
+    localStorage.setItem(RUNTIME_STORAGE_KEY, JSON.stringify(runtime))
+  } catch {
+    // ignore
+  }
+}
 
 export default function App() {
   const [state, setState] = useState<AppState>({ phase: 'boot' })
@@ -25,28 +49,41 @@ export default function App() {
           if (status.stage === 'ready') {
             // If we were switching, the new model is now ready
             if (prev.phase === 'switching') {
-              return { phase: 'ready', model: prev.toModel }
+              saveRuntime(prev.toRuntime)
+              return { phase: 'ready', runtime: prev.toRuntime }
             }
-            return { phase: 'ready', model: prev.phase === 'setup' ? prev.model : DEFAULT_MODEL }
+            const runtime = prev.phase === 'setup' ? prev.runtime : DEFAULT_RUNTIME
+            saveRuntime(runtime)
+            return { phase: 'ready', runtime }
           }
           if (status.stage === 'error') {
             // If switch failed, go back to the previous model
             if (prev.phase === 'switching') {
-              return { phase: 'ready', model: prev.model }
+              return { phase: 'ready', runtime: prev.runtime }
             }
           }
           // If we're in switching phase, keep it as switching
           if (prev.phase === 'switching') {
             return { ...prev, status }
           }
-          const model = prev.phase === 'setup' ? prev.model : DEFAULT_MODEL
-          return { phase: 'setup', status, model }
+          const runtime = prev.phase === 'setup' ? prev.runtime : DEFAULT_RUNTIME
+          return { phase: 'setup', status, runtime }
         })
       })
 
+      const runtime = loadRuntime()
+      if (runtime.provider === 'lm-studio') {
+        setState({
+          phase: 'setup',
+          status: { stage: 'checking', message: 'Welcome' },
+          runtime
+        })
+        return
+      }
+
       const local = await window.api.listLocalModels()
       const hasDefault = local.some(
-        (m) => m === DEFAULT_MODEL || m.startsWith(DEFAULT_MODEL + ':')
+        (m) => m === runtime.model || m.startsWith(runtime.model + ':')
       )
       if (hasDefault) {
         const { hasMLX } = await window.api.checkMLX()
@@ -54,16 +91,16 @@ export default function App() {
           setState({
             phase: 'setup',
             status: { stage: 'starting-mlx', message: 'Starting model runtime…' },
-            model: DEFAULT_MODEL
+            runtime
           })
-          window.api.startSetup(DEFAULT_MODEL)
+          window.api.startSetup(runtime)
           return
         }
       }
       setState({
         phase: 'setup',
         status: { stage: 'checking', message: 'Welcome' },
-        model: DEFAULT_MODEL
+        runtime
       })
     })()
     return () => {
@@ -72,18 +109,18 @@ export default function App() {
     }
   }, [])
 
-  function handleSwitchModel(newModel: string): void {
+  function handleSwitchRuntime(newRuntime: RuntimeConfig): void {
     setState((prev) => {
       if (prev.phase !== 'ready') return prev
-      if (prev.model === newModel) return prev
+      if (JSON.stringify(prev.runtime) === JSON.stringify(newRuntime)) return prev
       return {
         phase: 'switching',
-        model: prev.model,
-        toModel: newModel,
-        status: { stage: 'downloading-model', message: 'Switching model…' }
+        runtime: prev.runtime,
+        toRuntime: newRuntime,
+        status: { stage: 'downloading-model', message: 'Switching runtime…' }
       }
     })
-    window.api.switchModel(newModel)
+    window.api.switchModel(newRuntime)
   }
 
   if (state.phase === 'boot') {
@@ -95,17 +132,17 @@ export default function App() {
       <div key="setup" className="anim-fade-in h-full w-full">
         <Setup
           status={state.status}
-          model={state.model}
-          onModelChange={(m) =>
-            setState((s) => (s.phase === 'setup' ? { ...s, model: m } : s))
+          runtime={state.runtime}
+          onRuntimeChange={(runtime) =>
+            setState((s) => (s.phase === 'setup' ? { ...s, runtime } : s))
           }
-          onStart={(model) => {
+          onStart={(runtime) => {
             setState({
               phase: 'setup',
               status: { stage: 'checking', message: 'Checking system…' },
-              model
+              runtime
             })
-            window.api.startSetup(model)
+            window.api.startSetup(runtime)
           }}
         />
       </div>
@@ -115,7 +152,7 @@ export default function App() {
   if (state.phase === 'switching') {
     return (
       <div key="switching" className="anim-fade-in h-full w-full">
-        <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+        <Chat runtime={state.runtime} onSwitchRuntime={handleSwitchRuntime} />
         <SwitchingOverlay status={state.status} />
       </div>
     )
@@ -123,7 +160,7 @@ export default function App() {
 
   return (
     <div key="chat" className="anim-fade-scale h-full w-full">
-      <Chat model={state.model} onSwitchModel={handleSwitchModel} />
+      <Chat runtime={state.runtime} onSwitchRuntime={handleSwitchRuntime} />
     </div>
   )
 }

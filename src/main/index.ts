@@ -7,9 +7,10 @@ import {
   installMLX,
   startServer,
   stopServer,
-  hasModel,
   chatStream,
   listLocalModels,
+  listOpenAIModels,
+  normalizeOpenAIBaseUrl,
   type MLXChatMessage
 } from './mlx'
 import {
@@ -32,7 +33,7 @@ import {
   workspaceDir,
   wsWriteFile
 } from './workspace'
-import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
+import type { ChatRequest, RuntimeConfig, StreamChunk, ToolCall } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -125,10 +126,39 @@ async function ensureMLXRunning(model: string): Promise<string> {
   return pythonToUse
 }
 
-async function handleSetup(model: string): Promise<void> {
+async function ensureLMStudioReady(config: RuntimeConfig): Promise<void> {
+  if (!config.endpoint?.trim()) {
+    throw new Error('Enter the LM Studio server URL, for example http://127.0.0.1:1234')
+  }
+  if (!config.model.trim()) {
+    throw new Error('Enter the LM Studio model id shown in the LM Studio server tab.')
+  }
+
+  const baseUrl = normalizeOpenAIBaseUrl(config.endpoint)
+  send('setup:status', {
+    stage: 'connecting-lm-studio',
+    message: 'Connecting to LM Studio...'
+  })
+  const models = await listOpenAIModels(baseUrl)
+  if (!models.includes(config.model)) {
+    throw new Error(
+      `LM Studio is reachable, but "${config.model}" was not found. Available models: ${models.join(', ') || 'none'}`
+    )
+  }
+}
+
+async function handleSetup(configOrModel: RuntimeConfig | string): Promise<void> {
+  const config: RuntimeConfig =
+    typeof configOrModel === 'string'
+      ? { provider: 'mlx', model: configOrModel }
+      : configOrModel
   try {
     send('setup:status', { stage: 'checking', message: 'Checking system…' })
-    await ensureMLXRunning(model)
+    if (config.provider === 'lm-studio') {
+      await ensureLMStudioReady(config)
+    } else {
+      await ensureMLXRunning(config.model)
+    }
     send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
   } catch (e) {
     send('setup:status', {
@@ -253,9 +283,11 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
         }
       }
 
+      const runtime = req.runtime ?? { provider: 'mlx' as const, model: req.model }
       streamLoop: for await (const chunk of chatStream({
         model: req.model,
         messages: baseMessages,
+        baseUrl: runtime.provider === 'lm-studio' ? runtime.endpoint : undefined,
         signal: abort.signal
       })) {
         if (chunk.content) {
@@ -472,28 +504,39 @@ app.whenReady().then(async () => {
   })
   session.defaultSession.setPermissionCheckHandler(() => true)
 
-  ipcMain.handle('setup:start', async (_e, model: string) => {
-    await handleSetup(model)
+  ipcMain.handle('setup:start', async (_e, configOrModel: RuntimeConfig | string) => {
+    await handleSetup(configOrModel)
   })
 
-  ipcMain.handle('model:switch', async (_e, model: string) => {
+  ipcMain.handle('model:switch', async (_e, configOrModel: RuntimeConfig | string) => {
+    const config: RuntimeConfig =
+      typeof configOrModel === 'string'
+        ? { provider: 'mlx', model: configOrModel }
+        : configOrModel
+    const model = config.model
     const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
     send('setup:status', {
       stage: 'downloading-model',
       message: `Switching to ${label}…`
     })
     try {
-      await stopServer()
-      if (!mlxPython) {
-        throw new Error('MLX Python path not available. Please restart the app.')
-      }
-      await startServer(mlxPython, model, (p) => {
-        send('setup:status', {
-          stage: 'downloading-model',
-          message: p.message,
-          progress: p.progress
+      if (config.provider === 'lm-studio') {
+        await ensureLMStudioReady(config)
+      } else {
+        await stopServer()
+        if (!mlxPython) {
+          await ensureMLXRunning(model)
+          send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
+          return
+        }
+        await startServer(mlxPython, model, (p) => {
+          send('setup:status', {
+            stage: 'downloading-model',
+            message: p.message,
+            progress: p.progress
+          })
         })
-      })
+      }
       send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
     } catch (e) {
       send('setup:status', {
@@ -511,6 +554,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('models:list-local', async () => {
     return listLocalModels()
+  })
+
+  ipcMain.handle('models:list-openai', async (_e, endpoint: string) => {
+    return listOpenAIModels(endpoint)
   })
 
   ipcMain.handle('chat:send', async (_e, req: ChatRequest) => {

@@ -426,12 +426,14 @@ export interface MLXChatOptions {
   messages: MLXChatMessage[]
   signal?: AbortSignal
   temperature?: number
+  baseUrl?: string
 }
 
 export async function* chatStream(
   opts: MLXChatOptions
 ): AsyncGenerator<{ content?: string; done?: boolean }> {
-  const res = await fetch(`${MLX_URL}/v1/chat/completions`, {
+  const baseUrl = normalizeOpenAIBaseUrl(opts.baseUrl ?? MLX_URL)
+  const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -479,6 +481,23 @@ export async function* chatStream(
     }
   }
   yield { done: true }
+}
+
+export function normalizeOpenAIBaseUrl(input: string): string {
+  const trimmed = input.trim().replace(/\/+$/, '')
+  if (!trimmed) return `${MLX_URL}/v1`
+  return trimmed.endsWith('/v1') ? trimmed : `${trimmed}/v1`
+}
+
+export async function listOpenAIModels(baseUrl: string): Promise<string[]> {
+  const url = normalizeOpenAIBaseUrl(baseUrl)
+  const res = await fetch(`${url}/models`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Model list request failed: ${res.status} ${res.statusText} - ${text}`)
+  }
+  const data = (await res.json()) as { data?: Array<{ id?: string }> }
+  return (data.data ?? []).map((m) => m.id).filter((id): id is string => !!id)
 }
 
 /** Parse an SSE byte stream into individual data payloads */
