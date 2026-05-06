@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   ChatRequest,
+  RuntimeConfig,
   SetupStatus,
   StreamChunk,
   WorkspaceInfo,
@@ -8,9 +9,9 @@ import type {
 } from '../shared/types'
 
 const api = {
-  startSetup: (model: string): Promise<void> => ipcRenderer.invoke('setup:start', model),
+  startSetup: (config: RuntimeConfig | string): Promise<void> => ipcRenderer.invoke('setup:start', config),
 
-  switchModel: (model: string): Promise<void> => ipcRenderer.invoke('model:switch', model),
+  switchModel: (config: RuntimeConfig | string): Promise<void> => ipcRenderer.invoke('model:switch', config),
 
   checkMLX: (): Promise<{ hasMLX: boolean }> => ipcRenderer.invoke('setup:status'),
 
@@ -21,6 +22,9 @@ const api = {
   },
 
   listLocalModels: (): Promise<string[]> => ipcRenderer.invoke('models:list-local'),
+
+  listOpenAIModels: (endpoint: string): Promise<string[]> =>
+    ipcRenderer.invoke('models:list-openai', endpoint),
 
   sendChat: async (req: ChatRequest, onChunk: (c: StreamChunk) => void): Promise<void> => {
     const { channel } = (await ipcRenderer.invoke('chat:send', req)) as { channel: string }

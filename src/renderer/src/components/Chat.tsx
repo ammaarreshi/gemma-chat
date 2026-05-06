@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AVAILABLE_MODELS, type AgentMode, type ChatMessage, type ToolCall, type StreamChunk } from '@shared/types'
+import {
+  AVAILABLE_MODELS,
+  displayModelForRuntime,
+  resolveLMStudioModel,
+  type AgentMode,
+  type ChatMessage,
+  type RuntimeConfig,
+  type ToolCall,
+  type StreamChunk
+} from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 import Composer from './Composer'
 import Message from './Message'
@@ -7,8 +16,8 @@ import Sidebar from './Sidebar'
 import Canvas from './Canvas'
 
 interface Props {
-  model: string
-  onSwitchModel: (model: string) => void
+  runtime: RuntimeConfig
+  onSwitchRuntime: (runtime: RuntimeConfig) => void
 }
 
 interface Conversation {
@@ -56,7 +65,7 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export default function Chat({ model, onSwitchModel }: Props) {
+export default function Chat({ runtime, onSwitchRuntime }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations()
     return loaded.length ? loaded : [newConversation()]
@@ -124,7 +133,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
       role: 'assistant',
       content: '',
       createdAt: Date.now(),
-      model,
+      model: runtime.model,
       toolCalls: [],
       activity: { kind: 'thinking' }
     }
@@ -151,7 +160,8 @@ export default function Chat({ model, onSwitchModel }: Props) {
         {
           conversationId: activeId,
           messages: history,
-          model,
+          model: runtime.model,
+          runtime,
           enableTools: true,
           mode: conv.mode
         },
@@ -239,12 +249,12 @@ export default function Chat({ model, onSwitchModel }: Props) {
       <div className="flex min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
-            model={model}
+            runtime={runtime}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
             onToggleMode={toggleMode}
             onToggleCanvas={toggleCanvas}
-            onSwitchModel={onSwitchModel}
+            onSwitchRuntime={onSwitchRuntime}
           />
           <MessageList
             messages={activeConversation.messages}
@@ -257,7 +267,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
             onStop={handleStop}
             streaming={streaming}
             disabled={false}
-            model={model}
+            model={runtime.model}
             placeholder={
               activeConversation.mode === 'code'
                 ? 'Describe what to build — a webpage, component, or script…'
@@ -333,21 +343,25 @@ function ResizableCanvas({
 }
 
 function Header({
-  model,
+  runtime,
   mode,
   canvasOpen,
   onToggleMode,
   onToggleCanvas,
-  onSwitchModel
+  onSwitchRuntime
 }: {
-  model: string
+  runtime: RuntimeConfig
   mode: AgentMode
   canvasOpen: boolean
   onToggleMode: () => void
   onToggleCanvas: () => void
-  onSwitchModel: (model: string) => void
+  onSwitchRuntime: (runtime: RuntimeConfig) => void
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [lmStudioModels, setLmStudioModels] = useState<string[]>([])
+  const [modelListState, setModelListState] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [modelListError, setModelListError] = useState('')
+  const [customModel, setCustomModel] = useState(runtime.model)
   const pickerRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown on outside click
@@ -362,7 +376,39 @@ function Header({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [pickerOpen])
 
-  const currentLabel = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  useEffect(() => {
+    setCustomModel(runtime.model)
+  }, [runtime.model])
+
+  useEffect(() => {
+    if (!pickerOpen || runtime.provider !== 'lm-studio' || !runtime.endpoint) return
+
+    let cancelled = false
+    setModelListState('loading')
+    setModelListError('')
+    window.api
+      .listOpenAIModels(runtime.endpoint)
+      .then((models) => {
+        if (cancelled) return
+        setLmStudioModels(models)
+        setModelListState('idle')
+      })
+      .catch((e: Error) => {
+        if (cancelled) return
+        setLmStudioModels([])
+        setModelListState('error')
+        setModelListError(e.message)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [pickerOpen, runtime.provider, runtime.endpoint])
+
+  const currentLabel =
+    runtime.provider === 'lm-studio'
+      ? `LM Studio: ${displayModelForRuntime(runtime)?.label ?? (runtime.model || 'No model')}`
+      : AVAILABLE_MODELS.find((m) => m.name === runtime.model)?.label ?? runtime.model
 
   return (
     <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
@@ -392,37 +438,129 @@ function Header({
               <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
                 Switch model
               </div>
-              {AVAILABLE_MODELS.map((m) => (
-                <button
-                  key={m.name}
-                  onClick={() => {
-                    setPickerOpen(false)
-                    if (m.name !== model) onSwitchModel(m.name)
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                    m.name === model
-                      ? 'bg-white/[0.07] text-white'
-                      : 'text-ink-200 hover:bg-white/[0.04]'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                      {m.label}
-                      {m.recommended && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          rec
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+              {runtime.provider === 'lm-studio' ? (
+                <>
+                  <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                    {AVAILABLE_MODELS.map((m) => {
+                      const resolved = resolveLMStudioModel(m.name, lmStudioModels)
+                      const active = runtime.appModel === m.name
+                      return (
+                        <button
+                          key={m.name}
+                          disabled={!resolved || !runtime.endpoint}
+                          onClick={() => {
+                            if (!resolved || !runtime.endpoint) return
+                            setPickerOpen(false)
+                            onSwitchRuntime({
+                              provider: 'lm-studio',
+                              endpoint: runtime.endpoint,
+                              model: resolved,
+                              appModel: m.name
+                            })
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-55 ${
+                            active
+                              ? 'bg-white/[0.07] text-white'
+                              : 'text-ink-200 hover:bg-white/[0.04]'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="truncate text-[12.5px] font-medium">{m.label}</div>
+                            <div className="mt-0.5 truncate text-[10.5px] text-ink-400">
+                              {resolved ?? 'Not loaded in LM Studio'}
+                            </div>
+                          </div>
+                          {active ? (
+                            <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          ) : resolved ? (
+                            <span className="shrink-0 rounded-full bg-emerald-400/12 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-emerald-300">
+                              loaded
+                            </span>
+                          ) : null}
+                        </button>
+                      )
+                    })}
+                    {modelListState === 'loading' && (
+                      <div className="rounded-lg bg-white/[0.04] px-2.5 py-2 text-[11px] text-ink-400">
+                        Loading models...
+                      </div>
+                    )}
                   </div>
-                  {m.name === model && (
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
+                  {modelListError && (
+                    <div className="mt-1 line-clamp-2 px-2 text-[10px] text-red-300/80">
+                      {modelListError}
+                    </div>
                   )}
-                </button>
-              ))}
+                  <div className="mt-2 border-t border-white/10 pt-2">
+                    <div className="mb-1 px-2 text-[10px] font-medium uppercase tracking-wider text-ink-500">
+                      Custom
+                    </div>
+                    <div className="flex gap-1">
+                      <input
+                        value={customModel}
+                        onChange={(e) => setCustomModel(e.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-white/10 bg-black/25 px-2 py-1.5 text-[11.5px] text-white outline-none placeholder:text-ink-500 focus:border-white/25"
+                        placeholder="model id"
+                      />
+                      <button
+                        onClick={() => {
+                          const model = customModel.trim()
+                          if (!model || !runtime.endpoint) return
+                          setPickerOpen(false)
+                          onSwitchRuntime({
+                            provider: 'lm-studio',
+                            endpoint: runtime.endpoint,
+                            model,
+                            appModel: undefined
+                          })
+                        }}
+                        className="rounded-md bg-white px-2 py-1.5 text-[11px] font-medium text-ink-900 transition hover:bg-white/90"
+                      >
+                        Use
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-1 rounded-lg bg-white/[0.04] px-2.5 py-2 text-[11px] text-ink-300">
+                    Connected to {runtime.endpoint}
+                  </div>
+                </>
+              ) : (
+                AVAILABLE_MODELS.map((m) => (
+                  <button
+                    key={m.name}
+                    onClick={() => {
+                      setPickerOpen(false)
+                      if (m.name !== runtime.model || runtime.provider !== 'mlx') {
+                        onSwitchRuntime({ provider: 'mlx', model: m.name })
+                      }
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                      runtime.provider === 'mlx' && m.name === runtime.model
+                        ? 'bg-white/[0.07] text-white'
+                        : 'text-ink-200 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
+                        {m.label}
+                        {m.recommended && (
+                          <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            rec
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+                    </div>
+                    {runtime.provider === 'mlx' && m.name === runtime.model && (
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>
