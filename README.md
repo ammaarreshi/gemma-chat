@@ -17,6 +17,9 @@
 
 ## The Idea
 
+<img width="960" height="593" alt="Gemma4-Vibecoding" src="https://github.com/user-attachments/assets/4c45a83c-7c87-4c70-a293-fe475b7e34fa" />
+
+
 What if you could vibe code from an airplane? Or a cabin with no cell signal? Or just... without sending your code to someone else's server?
 
 **Gemma Chat** is an open-source Electron app that runs Gemma 4 natively on Apple Silicon. You describe what you want to build, and it writes the code — HTML, CSS, JavaScript, multi-file projects — with a live preview that updates as the model types. No internet connection needed after the initial model download.
@@ -60,9 +63,9 @@ npm install
 npm run dev
 ```
 
-First launch will auto-detect Python → create a venv → install MLX-LM → download the model (~3 GB) → ready to vibe code.
+First launch will auto-detect Python (including pyenv installs) → create a venv → install MLX-LM → download the model (~3 GB) → ready to vibe code.
 
-> **Tip:** Install Python via Homebrew if you don't have it: `brew install python@3.13`
+> **Tip:** Install Python with Homebrew (`brew install python@3.13`) or pyenv (`pyenv install 3.13.3 && pyenv global 3.13.3`).
 
 ### Building a Distributable
 

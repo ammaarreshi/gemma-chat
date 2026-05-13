@@ -1,11 +1,13 @@
 import { app } from 'electron'
 import { spawn, ChildProcess, spawnSync } from 'child_process'
+import { homedir } from 'os'
 import { join } from 'path'
-import { existsSync, rmSync } from 'fs'
+import { existsSync, readdirSync, rmSync } from 'fs'
 
 const MLX_PORT = 11434
 const MLX_HOST = `127.0.0.1:${MLX_PORT}`
 const MLX_URL = `http://${MLX_HOST}`
+const MAX_PYENV_VERSION_DIRS = 8
 
 let serverProc: ChildProcess | null = null
 let currentModel: string | null = null
@@ -38,11 +40,11 @@ function modelsDir(): string {
 /**
  * Find a compatible system Python (3.10–3.13).
  * We explicitly skip 3.14+ because mlx-lm doesn't publish wheels for it yet.
- * We try versioned binaries first (most reliable), then fall back to `python3`.
+ * We try pyenv-managed interpreters first, then common Homebrew/system locations.
  */
 function findSystemPython(): string | null {
-  // Prefer specific known-good versions, newest first
   const versionedCandidates = [
+    ...getPyenvCandidates(),
     '/opt/homebrew/bin/python3.13',
     '/opt/homebrew/bin/python3.12',
     '/opt/homebrew/bin/python3.11',
@@ -58,41 +60,141 @@ function findSystemPython(): string | null {
   ]
 
   for (const c of versionedCandidates) {
-    try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-      if (s.status === 0) {
-        console.log(`[mlx] Found compatible Python: ${c} (${s.stdout.toString().trim()})`)
-        return c
-      }
-    } catch {
-      // not available
+    const version = getPythonVersion(c)
+    if (!version) continue
+    if (version.minor >= 10 && version.minor <= 13) {
+      console.log(`[mlx] Found compatible Python: ${c} (${version.label})`)
+      return c
     }
   }
 
   // Last resort: try generic python3 but verify it's not 3.14+
-  const fallbacks = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3']
+  const fallbacks = dedupe([
+    '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3'
+  ])
   for (const c of fallbacks) {
-    try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-      if (s.status === 0) {
-        const ver = s.stdout.toString().trim() // e.g. "Python 3.13.2"
-        const match = ver.match(/Python 3\.(\d+)/)
-        const minor = match ? parseInt(match[1], 10) : 99
-        if (minor >= 10 && minor <= 13) {
-          console.log(`[mlx] Found compatible Python: ${c} (${ver})`)
-          return c
-        } else if (minor < 10) {
-          console.log(`[mlx] Skipping ${c} — ${ver} is too old (need 3.10+)`)
-        } else {
-          console.log(`[mlx] Skipping ${c} — ${ver} is too new for mlx-lm`)
-        }
-      }
-    } catch {
-      // not available
+    const version = getPythonVersion(c)
+    if (!version) continue
+    if (version.minor >= 10 && version.minor <= 13) {
+      console.log(`[mlx] Found compatible Python: ${c} (${version.label})`)
+      return c
+    } else if (version.minor < 10) {
+      console.log(`[mlx] Skipping ${c} — ${version.label} is too old (need 3.10+)`)
+    } else {
+      console.log(`[mlx] Skipping ${c} — ${version.label} is too new for mlx-lm`)
     }
   }
 
   return null
+}
+
+function getPyenvCandidates(): string[] {
+  const pyenvRoot = getPyenvRoot()
+  if (!pyenvRoot) return []
+
+  const shims = existingPaths([
+    join(pyenvRoot, 'shims', 'python3.13'),
+    join(pyenvRoot, 'shims', 'python3.12'),
+    join(pyenvRoot, 'shims', 'python3.11'),
+    join(pyenvRoot, 'shims', 'python3.10'),
+    join(pyenvRoot, 'shims', 'python3')
+  ])
+
+  const versionsDir = join(pyenvRoot, 'versions')
+  if (!existsSync(versionsDir)) return shims
+
+  try {
+    const versionBins = readdirSync(versionsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter(isSupportedPyenvVersionName)
+      .sort(compareVersionNamesDesc)
+      .slice(0, MAX_PYENV_VERSION_DIRS)
+      .flatMap((version) => getPyenvVersionBinaries(versionsDir, version))
+
+    return dedupe([...shims, ...versionBins])
+  } catch (error) {
+    console.log(`[mlx] Failed to enumerate pyenv versions in ${versionsDir}: ${String(error)}`)
+    return shims
+  }
+}
+
+function getPyenvRoot(): string | null {
+  const configured = process.env['PYENV_ROOT']
+  const candidates = configured ? [configured, join(homedir(), '.pyenv')] : [join(homedir(), '.pyenv')]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function compareVersionNamesDesc(a: string, b: string): number {
+  const aParts = extractVersionParts(a)
+  const bParts = extractVersionParts(b)
+  const maxLen = Math.max(aParts.length, bParts.length)
+
+  for (let i = 0; i < maxLen; i += 1) {
+    const diff = (bParts[i] ?? -1) - (aParts[i] ?? -1)
+    if (diff !== 0) return diff
+  }
+
+  return b.localeCompare(a)
+}
+
+function extractVersionParts(value: string): number[] {
+  const match = value.match(/^(\d+(?:\.\d+)*)/)
+  if (!match) return []
+  return match[1].split('.').map((part) => parseInt(part, 10))
+}
+
+function isSupportedPyenvVersionName(version: string): boolean {
+  const [major, minor] = extractVersionParts(version)
+  return major === 3 && typeof minor === 'number' && minor >= 10 && minor <= 13
+}
+
+function getPyenvVersionBinaries(versionsDir: string, version: string): string[] {
+  const binDir = join(versionsDir, version, 'bin')
+  const candidates = [join(binDir, 'python3')]
+  const parts = extractVersionParts(version)
+  const major = parts[0]
+  const minor = parts[1]
+
+  if (major === 3 && typeof minor === 'number') {
+    candidates.unshift(join(binDir, `python3.${minor}`))
+  }
+
+  return existingPaths(candidates)
+}
+
+function existingPaths(values: string[]): string[] {
+  return dedupe(values.filter((value) => existsSync(value)))
+}
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
+function getPythonVersion(candidate: string): { label: string; minor: number } | null {
+  try {
+    const result = spawnSync(candidate, ['--version'], {
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    if (result.status !== 0) return null
+
+    const versionText = [result.stdout?.toString(), result.stderr?.toString()]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    const match = versionText.match(/Python 3\.(\d+)(?:\.\d+)?/)
+    if (!match) return null
+
+    return {
+      label: match[0],
+      minor: parseInt(match[1], 10)
+    }
+  } catch {
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -114,17 +216,12 @@ export function locateMLX(): MLXStatus | null {
   // 1. Check if we have a working venv with mlx_lm installed
   const vPy = venvPython()
   if (existsSync(vPy)) {
-    // Verify the venv Python is 3.10+ — older versions can't run modern mlx-lm
-    try {
-      const verCheck = spawnSync(vPy, ['--version'], {
-        timeout: 5000,
-        stdio: ['ignore', 'pipe', 'pipe']
-      })
-      const verStr = verCheck.stdout?.toString().trim() || ''
-      const verMatch = verStr.match(/Python 3\.(\d+)/)
-      const minor = verMatch ? parseInt(verMatch[1], 10) : 0
-      if (minor < 10) {
-        console.log(`[mlx] Existing venv uses ${verStr} (too old). Deleting and recreating…`)
+    // Verify the venv Python is within the supported 3.10–3.13 range.
+    const version = getPythonVersion(vPy)
+    if (version) {
+      if (version.minor < 10 || version.minor > 13) {
+        const reason = version.minor < 10 ? 'too old' : 'too new'
+        console.log(`[mlx] Existing venv uses ${version.label} (${reason}). Deleting and recreating…`)
         try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
         // Fall through to system python detection below
       } else {
@@ -145,7 +242,7 @@ export function locateMLX(): MLXStatus | null {
         // Venv exists but mlx_lm is missing — can still pip install into it
         return { python: vPy, installed: false }
       }
-    } catch {
+    } else {
       // Can't check version — treat as needing recreation
       console.log('[mlx] Cannot determine venv Python version. Recreating…')
       try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
@@ -178,7 +275,7 @@ export async function installMLX(
   const sysPython = findSystemPython()
   if (!sysPython) {
     throw new Error(
-      'Python 3.10–3.13 not found. Please install Python via Homebrew: brew install python@3.13'
+      'Python 3.10–3.13 not found. Install it with Homebrew (`brew install python@3.13`) or pyenv.'
     )
   }
 
