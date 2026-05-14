@@ -1,13 +1,15 @@
 import { app, shell, BrowserWindow, ipcMain, nativeTheme, session, nativeImage } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { AVAILABLE_MODELS } from '@shared/types'
+import { getModelInfo, type ModelConfig } from '../shared/types'
 import {
   locateMLX,
   installMLX,
   startServer,
-  stopServer,
-  hasModel,
+  stopServerSync,
+  getCurrentModel,
+  getCurrentDraftModel,
+  getCurrentNumDraftTokens,
   chatStream,
   listLocalModels,
   type MLXChatMessage
@@ -35,6 +37,23 @@ import {
 import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
+
+/** Resolve draft-model fields against the known model registry so that
+ *  we never start mlx_lm.server with an incompatible target/draft pair,
+ *  even if the renderer supplies a stale or crafted IPC payload. */
+function resolveConfig(config: ModelConfig): ModelConfig {
+  if (!config || typeof config !== 'object' || typeof config.model !== 'string') {
+    throw new Error('Invalid model configuration received from renderer')
+  }
+  if (!config.draftModel) return config
+  const info = getModelInfo(config.model)
+  if (!info?.draft) return { model: config.model }
+  return {
+    model: config.model,
+    draftModel: info.draft.model,
+    numDraftTokens: info.draft.numDraftTokens
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -83,11 +102,11 @@ function send(channel: string, payload: unknown): void {
 
 let mlxPython: string | null = null
 
-async function ensureMLXRunning(model: string): Promise<string> {
+async function ensureMLXRunning(config: ModelConfig): Promise<string> {
   let mlx = locateMLX()
   if (!mlx) {
     throw new Error(
-      'Python 3.10–3.13 not found. Install via Homebrew: brew install python@3.13'
+      'Python 3.10–3.13 not found. Install it with Homebrew (`brew install python@3.13`) or pyenv.'
     )
   }
 
@@ -109,26 +128,31 @@ async function ensureMLXRunning(model: string): Promise<string> {
 
   mlxPython = pythonToUse
 
-  const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const label = getModelInfo(config.model)?.label ?? config.model
+  let msg = `Loading ${label}… (first run downloads the model)`
+  if (config.draftModel) {
+    const draftLabel = getModelInfo(config.model)?.draft?.model ?? config.draftModel
+    msg += ` + draft (${draftLabel})`
+  }
   send('setup:status', { stage: 'starting-mlx', message: 'Starting model runtime…' })
   send('setup:status', {
     stage: 'downloading-model',
-    message: `Loading ${label}… (first run downloads the model)`
+    message: msg
   })
-  await startServer(pythonToUse, model, (p) => {
+  await startServer(pythonToUse, config.model, (p) => {
     send('setup:status', {
       stage: 'downloading-model',
       message: p.message,
       progress: p.progress
     })
-  })
+  }, config.draftModel, config.numDraftTokens)
   return pythonToUse
 }
 
-async function handleSetup(model: string): Promise<void> {
+async function handleSetup(config: ModelConfig): Promise<void> {
   try {
     send('setup:status', { stage: 'checking', message: 'Checking system…' })
-    await ensureMLXRunning(model)
+    await ensureMLXRunning(config)
     send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
   } catch (e) {
     send('setup:status', {
@@ -472,30 +496,53 @@ app.whenReady().then(async () => {
   })
   session.defaultSession.setPermissionCheckHandler(() => true)
 
-  ipcMain.handle('setup:start', async (_e, model: string) => {
-    await handleSetup(model)
+  ipcMain.handle('setup:start', async (_e, rawConfig: ModelConfig) => {
+    await handleSetup(resolveConfig(rawConfig))
   })
 
-  ipcMain.handle('model:switch', async (_e, model: string) => {
-    const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  ipcMain.handle('model:switch', async (_e, rawConfig: ModelConfig) => {
+    const config = resolveConfig(rawConfig)
+    const label = getModelInfo(config.model)?.label ?? config.model
+    let msg = `Switching to ${label}…`
+    if (config.draftModel) {
+      const draftLabel = getModelInfo(config.model)?.draft?.model ?? config.draftModel
+      msg += ` + draft (${draftLabel})`
+    }
     send('setup:status', {
       stage: 'downloading-model',
-      message: `Switching to ${label}…`
+      message: msg
     })
+    const prevModel = getCurrentModel()
+    const prevDraft = getCurrentDraftModel()
+    const prevNumDraftTokens = getCurrentNumDraftTokens()
     try {
-      await stopServer()
       if (!mlxPython) {
         throw new Error('MLX Python path not available. Please restart the app.')
       }
-      await startServer(mlxPython, model, (p) => {
+      await startServer(mlxPython, config.model, (p) => {
         send('setup:status', {
           stage: 'downloading-model',
           message: p.message,
           progress: p.progress
         })
-      })
+      }, config.draftModel, config.numDraftTokens)
       send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
     } catch (e) {
+      // Switch failed — try restarting the previous config so the UI
+      // isn't left pointing at a dead server.
+      if (mlxPython && prevModel) {
+        try {
+          await startServer(mlxPython, prevModel, undefined, prevDraft ?? undefined, prevNumDraftTokens ?? undefined)
+          send('setup:status', {
+            stage: 'error',
+            message: 'Switch failed; reverted to previous model.',
+            error: (e as Error).message
+          })
+          return
+        } catch {
+          // Previous config also failed — surface the original error
+        }
+      }
       send('setup:status', {
         stage: 'error',
         message: 'Model switch failed',
@@ -579,6 +626,6 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  stopServer()
+  stopServerSync()
   stopWorkspaceServer()
 })

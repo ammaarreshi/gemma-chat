@@ -39,3 +39,6 @@ mlx-venv/
 
 # macOS iconset intermediates (the .icns is tracked)
 build/icon.iconset/
+
+# Local pyenv version file
+.python-version

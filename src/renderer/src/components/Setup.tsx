@@ -1,11 +1,11 @@
-import { AVAILABLE_MODELS, type SetupStatus } from '@shared/types'
+import { AVAILABLE_MODELS, getModelInfo, makeModelConfig, type ModelConfig, type SetupStatus } from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 
 interface Props {
   status: SetupStatus
-  model: string
-  onModelChange: (m: string) => void
-  onStart: (model: string) => void
+  config: ModelConfig
+  onConfigChange: (config: ModelConfig) => void
+  onStart: (config: ModelConfig) => void
 }
 
 function formatBytes(n?: number): string {
@@ -20,7 +20,7 @@ function formatBytes(n?: number): string {
   return `${v.toFixed(v < 10 && i > 0 ? 1 : 0)} ${u[i]}`
 }
 
-export default function Setup({ status, model, onModelChange, onStart }: Props) {
+export default function Setup({ status, config, onConfigChange, onStart }: Props) {
   const isWorking =
     status.stage === 'checking' ||
     status.stage === 'installing-mlx' ||
@@ -28,7 +28,7 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
     status.stage === 'downloading-model'
 
   if (status.stage === 'checking' && status.message === 'Welcome') {
-    return <WelcomeScreen model={model} onModelChange={onModelChange} onStart={onStart} />
+    return <WelcomeScreen config={config} onConfigChange={onConfigChange} onStart={onStart} />
   }
 
   return (
@@ -70,7 +70,7 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
               <div className="font-medium">Something went wrong</div>
               <div className="mt-1 text-red-300/80">{status.error}</div>
               <button
-                onClick={() => onStart(model)}
+                onClick={() => onStart(config)}
                 className="mt-3 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs hover:bg-white/10"
               >
                 Try again
@@ -84,15 +84,25 @@ export default function Setup({ status, model, onModelChange, onStart }: Props) 
 }
 
 function WelcomeScreen({
-  model,
-  onModelChange,
+  config,
+  onConfigChange,
   onStart
 }: {
-  model: string
-  onModelChange: (m: string) => void
-  onStart: (model: string) => void
+  config: ModelConfig
+  onConfigChange: (config: ModelConfig) => void
+  onStart: (config: ModelConfig) => void
 }) {
-  const selected = AVAILABLE_MODELS.find((m) => m.name === model) ?? AVAILABLE_MODELS[1]
+  const selected = getModelInfo(config.model) ?? AVAILABLE_MODELS[1]
+  const hasDraft = !!selected?.draft
+
+  function toggleDraft(): void {
+    onConfigChange(makeModelConfig(config.model, !config.draftModel))
+  }
+
+  const totalSize = config.draftModel && selected.draft
+    ? `${selected.size} + ${selected.draft.size}`
+    : selected.size
+
   return (
     <div className="drag flex h-full w-full flex-col">
       <div className="h-9" />
@@ -115,9 +125,9 @@ function WelcomeScreen({
             {AVAILABLE_MODELS.map((m) => (
               <button
                 key={m.name}
-                onClick={() => onModelChange(m.name)}
+                onClick={() => onConfigChange(makeModelConfig(m.name, !!config.draftModel))}
                 className={`anim-fade-up group relative w-full rounded-xl border px-4 py-3 text-left transition active:scale-[0.99] ${
-                  model === m.name
+                  config.model === m.name
                     ? 'border-white/25 bg-white/[0.06]'
                     : 'border-white/5 bg-white/[0.02] hover:border-white/10 hover:bg-white/[0.04]'
                 }`}
@@ -140,11 +150,48 @@ function WelcomeScreen({
             ))}
           </div>
 
+          {hasDraft && (
+            <div className="anim-fade-up mt-4">
+              <button
+                onClick={toggleDraft}
+                aria-pressed={!!config.draftModel}
+                className={`flex w-full items-center gap-3 rounded-xl border px-4 py-2.5 text-left transition ${
+                  config.draftModel
+                    ? 'border-emerald-500/30 bg-emerald-500/10'
+                    : 'border-white/5 bg-white/[0.02] hover:border-white/10'
+                }`}
+              >
+                <div className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition ${
+                  config.draftModel
+                    ? 'border-emerald-500 bg-emerald-500'
+                    : 'border-white/20 bg-white/[0.04]'
+                }`}>
+                  {config.draftModel && (
+                    <svg viewBox="0 0 12 12" className="h-3 w-3 text-white" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M2.5 6.5l2.5 2.5 4.5-5" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-ink-100">
+                    Enable speculative decoding
+                  </div>
+                  <div className="text-xs text-ink-400">
+                    Uses a small assistant model to accelerate generation
+                    {selected.draft && (
+                      <span> · +{selected.draft.size} download</span>
+                    )}
+                  </div>
+                </div>
+              </button>
+            </div>
+          )}
+
           <button
-            onClick={() => onStart(selected.name)}
+            onClick={() => onStart(config)}
             className="mt-6 w-full rounded-xl bg-white py-3 text-sm font-medium text-ink-900 transition hover:bg-white/90 active:scale-[0.99]"
           >
-            Download {selected.label} &nbsp;·&nbsp; {selected.size}
+            Download {selected.label}{config.draftModel ? ' + Draft' : ''} &nbsp;·&nbsp; {totalSize}
           </button>
           <p className="mt-3 text-center text-[11px] text-ink-400">
             We'll install MLX runtime if needed. Model weights are cached locally.

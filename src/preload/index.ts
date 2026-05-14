@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 import type {
   ChatRequest,
+  ModelConfig,
   SetupStatus,
   StreamChunk,
   WorkspaceInfo,
@@ -8,9 +9,9 @@ import type {
 } from '../shared/types'
 
 const api = {
-  startSetup: (model: string): Promise<void> => ipcRenderer.invoke('setup:start', model),
+  startSetup: (config: ModelConfig): Promise<void> => ipcRenderer.invoke('setup:start', config),
 
-  switchModel: (model: string): Promise<void> => ipcRenderer.invoke('model:switch', model),
+  switchModel: (config: ModelConfig): Promise<void> => ipcRenderer.invoke('model:switch', config),
 
   checkMLX: (): Promise<{ hasMLX: boolean }> => ipcRenderer.invoke('setup:status'),
 

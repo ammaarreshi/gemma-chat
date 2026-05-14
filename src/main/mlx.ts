@@ -1,14 +1,18 @@
 import { app } from 'electron'
 import { spawn, ChildProcess, spawnSync } from 'child_process'
+import { homedir } from 'os'
 import { join } from 'path'
-import { existsSync, rmSync } from 'fs'
+import { existsSync, readdirSync, rmSync } from 'fs'
 
 const MLX_PORT = 11434
 const MLX_HOST = `127.0.0.1:${MLX_PORT}`
 const MLX_URL = `http://${MLX_HOST}`
+const MAX_PYENV_VERSION_DIRS = 8
 
 let serverProc: ChildProcess | null = null
 let currentModel: string | null = null
+let currentDraftModel: string | null = null
+let currentNumDraftTokens: number | null = null
 
 // ---------------------------------------------------------------------------
 // Paths — everything lives under <appData>/mlx/
@@ -38,11 +42,11 @@ function modelsDir(): string {
 /**
  * Find a compatible system Python (3.10–3.13).
  * We explicitly skip 3.14+ because mlx-lm doesn't publish wheels for it yet.
- * We try versioned binaries first (most reliable), then fall back to `python3`.
+ * We try pyenv-managed interpreters first, then common Homebrew/system locations.
  */
 function findSystemPython(): string | null {
-  // Prefer specific known-good versions, newest first
   const versionedCandidates = [
+    ...getPyenvCandidates(),
     '/opt/homebrew/bin/python3.13',
     '/opt/homebrew/bin/python3.12',
     '/opt/homebrew/bin/python3.11',
@@ -58,41 +62,141 @@ function findSystemPython(): string | null {
   ]
 
   for (const c of versionedCandidates) {
-    try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-      if (s.status === 0) {
-        console.log(`[mlx] Found compatible Python: ${c} (${s.stdout.toString().trim()})`)
-        return c
-      }
-    } catch {
-      // not available
+    const version = getPythonVersion(c)
+    if (!version) continue
+    if (version.minor >= 10 && version.minor <= 13) {
+      console.log(`[mlx] Found compatible Python: ${c} (${version.label})`)
+      return c
     }
   }
 
   // Last resort: try generic python3 but verify it's not 3.14+
-  const fallbacks = ['/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3']
+  const fallbacks = dedupe([
+    '/opt/homebrew/bin/python3',
+    '/usr/local/bin/python3',
+    '/usr/bin/python3'
+  ])
   for (const c of fallbacks) {
-    try {
-      const s = spawnSync(c, ['--version'], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] })
-      if (s.status === 0) {
-        const ver = s.stdout.toString().trim() // e.g. "Python 3.13.2"
-        const match = ver.match(/Python 3\.(\d+)/)
-        const minor = match ? parseInt(match[1], 10) : 99
-        if (minor >= 10 && minor <= 13) {
-          console.log(`[mlx] Found compatible Python: ${c} (${ver})`)
-          return c
-        } else if (minor < 10) {
-          console.log(`[mlx] Skipping ${c} — ${ver} is too old (need 3.10+)`)
-        } else {
-          console.log(`[mlx] Skipping ${c} — ${ver} is too new for mlx-lm`)
-        }
-      }
-    } catch {
-      // not available
+    const version = getPythonVersion(c)
+    if (!version) continue
+    if (version.minor >= 10 && version.minor <= 13) {
+      console.log(`[mlx] Found compatible Python: ${c} (${version.label})`)
+      return c
+    } else if (version.minor < 10) {
+      console.log(`[mlx] Skipping ${c} — ${version.label} is too old (need 3.10+)`)
+    } else {
+      console.log(`[mlx] Skipping ${c} — ${version.label} is too new for mlx-lm`)
     }
   }
 
   return null
+}
+
+function getPyenvCandidates(): string[] {
+  const pyenvRoot = getPyenvRoot()
+  if (!pyenvRoot) return []
+
+  const shims = existingPaths([
+    join(pyenvRoot, 'shims', 'python3.13'),
+    join(pyenvRoot, 'shims', 'python3.12'),
+    join(pyenvRoot, 'shims', 'python3.11'),
+    join(pyenvRoot, 'shims', 'python3.10'),
+    join(pyenvRoot, 'shims', 'python3')
+  ])
+
+  const versionsDir = join(pyenvRoot, 'versions')
+  if (!existsSync(versionsDir)) return shims
+
+  try {
+    const versionBins = readdirSync(versionsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter(isSupportedPyenvVersionName)
+      .sort(compareVersionNamesDesc)
+      .slice(0, MAX_PYENV_VERSION_DIRS)
+      .flatMap((version) => getPyenvVersionBinaries(versionsDir, version))
+
+    return dedupe([...shims, ...versionBins])
+  } catch (error) {
+    console.log(`[mlx] Failed to enumerate pyenv versions in ${versionsDir}: ${String(error)}`)
+    return shims
+  }
+}
+
+function getPyenvRoot(): string | null {
+  const configured = process.env['PYENV_ROOT']
+  const candidates = configured ? [configured, join(homedir(), '.pyenv')] : [join(homedir(), '.pyenv')]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function compareVersionNamesDesc(a: string, b: string): number {
+  const aParts = extractVersionParts(a)
+  const bParts = extractVersionParts(b)
+  const maxLen = Math.max(aParts.length, bParts.length)
+
+  for (let i = 0; i < maxLen; i += 1) {
+    const diff = (bParts[i] ?? -1) - (aParts[i] ?? -1)
+    if (diff !== 0) return diff
+  }
+
+  return b.localeCompare(a)
+}
+
+function extractVersionParts(value: string): number[] {
+  const match = value.match(/^(\d+(?:\.\d+)*)/)
+  if (!match) return []
+  return match[1].split('.').map((part) => parseInt(part, 10))
+}
+
+function isSupportedPyenvVersionName(version: string): boolean {
+  const [major, minor] = extractVersionParts(version)
+  return major === 3 && typeof minor === 'number' && minor >= 10 && minor <= 13
+}
+
+function getPyenvVersionBinaries(versionsDir: string, version: string): string[] {
+  const binDir = join(versionsDir, version, 'bin')
+  const candidates = [join(binDir, 'python3')]
+  const parts = extractVersionParts(version)
+  const major = parts[0]
+  const minor = parts[1]
+
+  if (major === 3 && typeof minor === 'number') {
+    candidates.unshift(join(binDir, `python3.${minor}`))
+  }
+
+  return existingPaths(candidates)
+}
+
+function existingPaths(values: string[]): string[] {
+  return dedupe(values.filter((value) => existsSync(value)))
+}
+
+function dedupe(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
+function getPythonVersion(candidate: string): { label: string; minor: number } | null {
+  try {
+    const result = spawnSync(candidate, ['--version'], {
+      timeout: 5000,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
+    if (result.status !== 0) return null
+
+    const versionText = [result.stdout?.toString(), result.stderr?.toString()]
+      .filter(Boolean)
+      .join(' ')
+      .trim()
+    const match = versionText.match(/Python 3\.(\d+)(?:\.\d+)?/)
+    if (!match) return null
+
+    return {
+      label: match[0],
+      minor: parseInt(match[1], 10)
+    }
+  } catch {
+    return null
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -114,17 +218,12 @@ export function locateMLX(): MLXStatus | null {
   // 1. Check if we have a working venv with mlx_lm installed
   const vPy = venvPython()
   if (existsSync(vPy)) {
-    // Verify the venv Python is 3.10+ — older versions can't run modern mlx-lm
-    try {
-      const verCheck = spawnSync(vPy, ['--version'], {
-        timeout: 5000,
-        stdio: ['ignore', 'pipe', 'pipe']
-      })
-      const verStr = verCheck.stdout?.toString().trim() || ''
-      const verMatch = verStr.match(/Python 3\.(\d+)/)
-      const minor = verMatch ? parseInt(verMatch[1], 10) : 0
-      if (minor < 10) {
-        console.log(`[mlx] Existing venv uses ${verStr} (too old). Deleting and recreating…`)
+    // Verify the venv Python is within the supported 3.10–3.13 range.
+    const version = getPythonVersion(vPy)
+    if (version) {
+      if (version.minor < 10 || version.minor > 13) {
+        const reason = version.minor < 10 ? 'too old' : 'too new'
+        console.log(`[mlx] Existing venv uses ${version.label} (${reason}). Deleting and recreating…`)
         try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
         // Fall through to system python detection below
       } else {
@@ -145,7 +244,7 @@ export function locateMLX(): MLXStatus | null {
         // Venv exists but mlx_lm is missing — can still pip install into it
         return { python: vPy, installed: false }
       }
-    } catch {
+    } else {
       // Can't check version — treat as needing recreation
       console.log('[mlx] Cannot determine venv Python version. Recreating…')
       try { rmSync(venvDir(), { recursive: true, force: true }) } catch { /* ok */ }
@@ -156,6 +255,52 @@ export function locateMLX(): MLXStatus | null {
   const sysPython = findSystemPython()
   if (!sysPython) return null
   return { python: sysPython, installed: false }
+}
+
+/**
+ * Check the installed mlx-lm version and upgrade if older than a known
+ * minimum that supports --draft-model.  This protects users whose venv
+ * was provisioned by an older app version that didn't need draft flags.
+ */
+const MLX_LM_DRAFT_MIN = '0.20.0'
+
+function versionGte(installed: string, min: string): boolean {
+  const iParts = installed.split('.').map(Number)
+  const mParts = min.split('.').map(Number)
+  for (let i = 0; i < 3; i++) {
+    const iv = iParts[i] ?? 0
+    const mv = mParts[i] ?? 0
+    if (iv > mv) return true
+    if (iv < mv) return false
+  }
+  return true
+}
+
+export async function ensureDraftSupport(
+  python: string,
+  onProgress?: (p: InstallProgress) => void
+): Promise<void> {
+  const progress = onProgress ?? (() => {})
+  const result = spawnSync(python, [
+    '-c', 'import mlx_lm; print(getattr(mlx_lm, "__version__", "0.0.0"))'
+  ], { timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] })
+  if (result.status !== 0 || !result.stdout) {
+    console.log('[mlx] Could not determine mlx-lm version; upgrading to ensure draft support…')
+    await runProcess(python, [
+      '-m', 'pip', 'install', '--upgrade', `mlx-lm>=${MLX_LM_DRAFT_MIN}`,
+      '--index-url', 'https://pypi.org/simple/'
+    ], progress)
+    return
+  }
+
+  const installed = result.stdout.toString().trim()
+  if (versionGte(installed, MLX_LM_DRAFT_MIN)) return
+
+  console.log(`[mlx] mlx-lm ${installed} too old for draft; upgrading to >=${MLX_LM_DRAFT_MIN}…`)
+  await runProcess(python, [
+    '-m', 'pip', 'install', '--upgrade', `mlx-lm>=${MLX_LM_DRAFT_MIN}`,
+    '--index-url', 'https://pypi.org/simple/'
+  ], progress)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +323,7 @@ export async function installMLX(
   const sysPython = findSystemPython()
   if (!sysPython) {
     throw new Error(
-      'Python 3.10–3.13 not found. Please install Python via Homebrew: brew install python@3.13'
+      'Python 3.10–3.13 not found. Install it with Homebrew (`brew install python@3.13`) or pyenv.'
     )
   }
 
@@ -269,12 +414,20 @@ export interface ServerProgress {
 export async function startServer(
   python: string,
   model: string,
-  onProgress?: (p: ServerProgress) => void
+  onProgress?: (p: ServerProgress) => void,
+  draftModel?: string,
+  numDraftTokens?: number
 ): Promise<void> {
-  if (serverProc && !serverProc.killed && currentModel === model) return
+  if (serverProc && !serverProc.killed && currentModel === model && currentDraftModel === (draftModel ?? null) && currentNumDraftTokens === (numDraftTokens ?? null)) return
+
+  // Ensure mlx-lm is new enough to support --draft-model before we
+  // pass those flags.  This is a no-op if already at a sufficient version.
+  if (draftModel) {
+    await ensureDraftSupport(python, (p) => onProgress?.({ message: p.message }))
+  }
 
   // Kill existing server if running with different model
-  stopServer()
+  await stopServer()
 
   const env = {
     ...process.env,
@@ -288,18 +441,31 @@ export async function startServer(
   let earlyExit: { code: number | null; stderr: string } | null = null
   let stderrBuf = ''
 
-  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server --model ${model} --port ${MLX_PORT}`)
-
-  serverProc = spawn(
-    python,
-    ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)],
-    {
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: false
+  const args = ['-m', 'mlx_lm.server', '--model', model, '--port', String(MLX_PORT)]
+  if (draftModel) {
+    args.push('--draft-model', draftModel)
+    if (numDraftTokens != null) {
+      args.push('--num-draft-tokens', String(numDraftTokens))
     }
-  )
+  }
+
+  let logCmd = `--model ${model} --port ${MLX_PORT}`
+  if (draftModel) {
+    logCmd += ` --draft-model ${draftModel}`
+    if (numDraftTokens != null) {
+      logCmd += ` --num-draft-tokens ${numDraftTokens}`
+    }
+  }
+  console.log(`[mlx] Starting server: ${python} -m mlx_lm.server ${logCmd}`)
+
+  serverProc = spawn(python, args, {
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: false
+  })
   currentModel = model
+  currentDraftModel = draftModel ?? null
+  currentNumDraftTokens = numDraftTokens ?? null
 
   serverProc.stdout?.on('data', (d) => console.log('[mlx]', d.toString().trim()))
   serverProc.stderr?.on('data', (d) => {
@@ -332,11 +498,18 @@ export async function startServer(
       }
     }
   })
-  serverProc.on('exit', (code) => {
+  const thisProc = serverProc
+  thisProc.on('exit', (code) => {
+    // Only clear state if this process is still the current server —
+    // stopServer() + a fast restart can leave a stale exit handler that
+    // would otherwise wipe the replacement server's global state.
+    if (serverProc !== thisProc) return
     console.log('[mlx] server exited with code', code)
     earlyExit = { code, stderr: stderrBuf }
     serverProc = null
     currentModel = null
+    currentDraftModel = null
+    currentNumDraftTokens = null
   })
 
   // Wait for the server to become healthy.
@@ -344,13 +517,78 @@ export async function startServer(
   await waitForHealth(600_000, () => earlyExit)
 }
 
-export function stopServer(): void {
+export async function stopServer(): Promise<void> {
+  const oldProc = serverProc
+  if (!oldProc || oldProc.killed) {
+    serverProc = null
+    currentModel = null
+    currentDraftModel = null
+    currentNumDraftTokens = null
+    return
+  }
+  console.log('[mlx] Stopping server')
+  oldProc.kill('SIGTERM')
+
+  // Single exit listener registered upfront so it cannot miss the event.
+  const onExit = new Promise<boolean>((resolve) => {
+    oldProc.on('exit', () => resolve(true))
+  })
+
+  // Wait for the process to actually exit before returning so that any
+  // subsequent startServer call does not race against a still-serving
+  // old process that could respond to /v1/models before the replacement
+  // is ready (especially when only the draft config changed).
+  if (oldProc.exitCode === null) {
+    const exited = await Promise.race([
+      onExit,
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000))
+    ])
+    if (!exited) {
+      console.log('[mlx] Server did not exit after SIGTERM; sending SIGKILL…')
+      oldProc.kill('SIGKILL')
+      if (!(await Promise.race([
+        onExit,
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000))
+      ]))) {
+        console.warn('[mlx] Server still alive after SIGKILL; proceeding anyway')
+      }
+    }
+  }
+
+  serverProc = null
+  currentModel = null
+  currentDraftModel = null
+  currentNumDraftTokens = null
+}
+
+/**
+ * Synchronous variant used only during app quit where there is no
+ * replacement server to race against.  Sends a best-effort SIGTERM
+ * and returns immediately — unlike stopServer() there is no SIGKILL
+ * escalation or wait-for-exit, which is acceptable since the app is
+ * shutting down and a lingering server process is a minor nuisance.
+ */
+export function stopServerSync(): void {
   if (serverProc && !serverProc.killed) {
-    console.log('[mlx] Stopping server')
+    console.log('[mlx] Stopping server (sync)')
     serverProc.kill('SIGTERM')
     serverProc = null
     currentModel = null
+    currentDraftModel = null
+    currentNumDraftTokens = null
   }
+}
+
+export function getCurrentModel(): string | null {
+  return currentModel
+}
+
+export function getCurrentDraftModel(): string | null {
+  return currentDraftModel
+}
+
+export function getCurrentNumDraftTokens(): number | null {
+  return currentNumDraftTokens
 }
 
 /**

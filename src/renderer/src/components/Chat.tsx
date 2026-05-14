@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AVAILABLE_MODELS, type AgentMode, type ChatMessage, type ToolCall, type StreamChunk } from '@shared/types'
+import { AVAILABLE_MODELS, getModelInfo, makeModelConfig, type AgentMode, type ChatMessage, type ModelConfig, type ToolCall, type StreamChunk } from '@shared/types'
 import gemmaLogoUrl from '../assets/gemma-logo.png'
 import Composer from './Composer'
 import Message from './Message'
@@ -7,8 +7,8 @@ import Sidebar from './Sidebar'
 import Canvas from './Canvas'
 
 interface Props {
-  model: string
-  onSwitchModel: (model: string) => void
+  config: ModelConfig
+  onSwitchModel: (config: ModelConfig) => void
 }
 
 interface Conversation {
@@ -56,7 +56,7 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 }
 
-export default function Chat({ model, onSwitchModel }: Props) {
+export default function Chat({ config, onSwitchModel }: Props) {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations()
     return loaded.length ? loaded : [newConversation()]
@@ -124,7 +124,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
       role: 'assistant',
       content: '',
       createdAt: Date.now(),
-      model,
+      model: config.model,
       toolCalls: [],
       activity: { kind: 'thinking' }
     }
@@ -151,7 +151,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
         {
           conversationId: activeId,
           messages: history,
-          model,
+          model: config.model,
           enableTools: true,
           mode: conv.mode
         },
@@ -239,7 +239,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
       <div className="flex min-w-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           <Header
-            model={model}
+            config={config}
             mode={activeConversation.mode}
             canvasOpen={!!activeConversation.canvasOpen}
             onToggleMode={toggleMode}
@@ -257,7 +257,7 @@ export default function Chat({ model, onSwitchModel }: Props) {
             onStop={handleStop}
             streaming={streaming}
             disabled={false}
-            model={model}
+            model={config.model}
             placeholder={
               activeConversation.mode === 'code'
                 ? 'Describe what to build — a webpage, component, or script…'
@@ -333,19 +333,19 @@ function ResizableCanvas({
 }
 
 function Header({
-  model,
+  config,
   mode,
   canvasOpen,
   onToggleMode,
   onToggleCanvas,
   onSwitchModel
 }: {
-  model: string
+  config: ModelConfig
   mode: AgentMode
   canvasOpen: boolean
   onToggleMode: () => void
   onToggleCanvas: () => void
-  onSwitchModel: (model: string) => void
+  onSwitchModel: (config: ModelConfig) => void
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
@@ -362,7 +362,9 @@ function Header({
     return () => document.removeEventListener('mousedown', handleClick)
   }, [pickerOpen])
 
-  const currentLabel = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
+  const currentInfo = getModelInfo(config.model)
+  const currentLabel = currentInfo?.label ?? config.model
+  const hasDraft = !!currentInfo?.draft
 
   return (
     <div className="drag flex h-11 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
@@ -383,46 +385,87 @@ function Header({
           >
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" />
             {currentLabel}
+            {config.draftModel && (
+              <svg viewBox="0 0 16 16" className="h-3 w-3 text-emerald-400" fill="currentColor">
+                <path d="M8 1L3 6v6h10V6L8 1zM7 5h2v4H7V5zm0 5h2v2H7v-2z" />
+              </svg>
+            )}
             <svg viewBox="0 0 16 16" className={`h-3 w-3 transition-transform duration-200 ${pickerOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M4 6l4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
           {pickerOpen && (
-            <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-64 rounded-xl border border-white/10 bg-[#1a1a1a] p-1.5 shadow-2xl backdrop-blur-xl">
+            <div className="anim-fade-scale absolute right-0 top-full z-50 mt-1 w-72 rounded-xl border border-white/10 bg-[#1a1a1a] p-1.5 shadow-2xl backdrop-blur-xl">
               <div className="mb-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-ink-400">
                 Switch model
               </div>
-              {AVAILABLE_MODELS.map((m) => (
+              {AVAILABLE_MODELS.map((m) => {
+                const isActive = m.name === config.model
+                const modelConfig = makeModelConfig(m.name, !!config.draftModel)
+                return (
+                  <button
+                    key={m.name}
+                    onClick={() => {
+                      setPickerOpen(false)
+                      if (m.name !== config.model) onSwitchModel(modelConfig)
+                    }}
+                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
+                      isActive
+                        ? 'bg-white/[0.07] text-white'
+                        : 'text-ink-200 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
+                        {m.label}
+                        {m.recommended && (
+                          <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
+                            rec
+                          </span>
+                        )}
+                        {m.draft && isActive && config.draftModel && (
+                          <span className="rounded-full bg-emerald-500/15 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-emerald-300">
+                            ⚡
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+                    </div>
+                    {isActive && (
+                      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                )
+              })}
+              {hasDraft && (
                 <button
-                  key={m.name}
                   onClick={() => {
                     setPickerOpen(false)
-                    if (m.name !== model) onSwitchModel(m.name)
+                    onSwitchModel(makeModelConfig(config.model, !config.draftModel))
                   }}
-                  className={`flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left transition-all duration-150 ${
-                    m.name === model
-                      ? 'bg-white/[0.07] text-white'
-                      : 'text-ink-200 hover:bg-white/[0.04]'
+                  aria-pressed={!!config.draftModel}
+                  className={`mt-1 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition ${
+                    config.draftModel
+                      ? 'bg-emerald-500/10 text-emerald-300'
+                      : 'text-ink-400 hover:bg-white/[0.04] hover:text-ink-200'
                   }`}
                 >
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[12.5px] font-medium">
-                      {m.label}
-                      {m.recommended && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] font-medium uppercase tracking-wider text-ink-200">
-                          rec
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-ink-400">{m.size}</div>
+                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition ${
+                    config.draftModel
+                      ? 'border-emerald-500 bg-emerald-500'
+                      : 'border-white/20'
+                  }`}>
+                    {config.draftModel && (
+                      <svg viewBox="0 0 10 10" className="h-2.5 w-2.5 text-white" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M2 5l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
                   </div>
-                  {m.name === model && (
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M3 8.5l3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
+                  <span>Speculative decoding {config.draftModel ? 'on' : 'off'}</span>
                 </button>
-              ))}
+              )}
             </div>
           )}
         </div>
