@@ -122,10 +122,14 @@ Both settings are read from environment variables at launch.
 - Standard Windows window chrome (no hidden title bar / vibrancy)
 - Windows `.ico` generated, NSIS installer target added
 
+## Pre-built Releases
+
+Each tagged release on GitHub ships installers for all five platforms built by [GitHub Actions](.github/workflows/release.yml): Windows `.exe`, Linux `.AppImage`, x64 `.deb`, arm64 `.deb` (Raspberry Pi), and macOS `.dmg`. Grab the latest from the [Releases page](https://github.com/revdarkness/gemma-chat/releases) — no clone, no `npm install`. Installers are unsigned; SmartScreen / Gatekeeper warnings are expected.
+
 ## Roadmap
 
 - **v0.2** — Optional bundled llama.cpp backend so users don't need to install Ollama at all
-- **Pre-built release artifacts** — GitHub Releases with signed Windows installer + Linux AppImage + arm64 .deb so non-developers don't have to clone and build
+- **Code-signed releases** — wire up `CSC_LINK` / Apple notarization so SmartScreen and Gatekeeper stop warning
 - **`OLLAMA_API_KEY` first-class support** — for `:cloud` models without env-var fiddling
 
 ## Tech Stack
