@@ -83,11 +83,29 @@ First launch will pull `gemma3:4b` from the Ollama registry (~3.3 GB). Subsequen
 
 ## Building the Installer
 
+**Windows (.exe, NSIS):**
+
 ```powershell
 npm run dist:win
 ```
 
 Produces `dist/gemma-chat-<version>-setup.exe` (NSIS installer, x64). SmartScreen will warn on first launch because the installer isn't code-signed — that's expected for community builds. Click **More info** → **Run anyway**.
+
+**Linux (.AppImage + .deb, x64 + arm64):**
+
+```bash
+npm run dist:linux           # x64 AppImage + x64/arm64 .deb (run on x64 Linux)
+npm run dist:linux:arm64     # arm64 .deb only (for Raspberry Pi)
+```
+
+Produces:
+- `dist/gemma-chat-<version>-x86_64.AppImage` — universal Linux binary, works on any modern distro
+- `dist/gemma-chat_<version>_amd64.deb` — for Debian, Ubuntu, Mint, Pop!_OS
+- `dist/gemma-chat_<version>_arm64.deb` — for **Raspberry Pi 5** (or any aarch64 Linux), Pi 4 64-bit OS
+
+The `.deb` declares `libnotify4`, `libxtst6`, and `libnss3` as runtime deps. Ollama itself is **not** an apt dependency — install it separately from https://ollama.com/download/linux (the install script supports Pi).
+
+**Raspberry Pi notes:** Use **`gemma3:1b`** (815 MB) or **`gemma4:cloud`** (Ollama Turbo, inference happens on Ollama's servers). The local **`gemma4`** 8B is technically runnable on a Pi 5 16 GB but slow (~1 tok/s on CPU). The app's HTTP client doesn't care whether the model is local or `:cloud` — it just talks to whatever Ollama your `OLLAMA_HOST` points at.
 
 ## Configuration
 
@@ -107,7 +125,8 @@ Both settings are read from environment variables at launch.
 ## Roadmap
 
 - **v0.2** — Optional bundled llama.cpp backend so users don't need to install Ollama at all
-- **Linux build target** — already mostly works; just needs an AppImage / `.deb` config
+- **Pre-built release artifacts** — GitHub Releases with signed Windows installer + Linux AppImage + arm64 .deb so non-developers don't have to clone and build
+- **`OLLAMA_API_KEY` first-class support** — for `:cloud` models without env-var fiddling
 
 ## Tech Stack
 
