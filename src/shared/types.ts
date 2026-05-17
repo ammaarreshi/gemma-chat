@@ -89,9 +89,17 @@ export interface ModelInfo {
   recommended?: boolean
 }
 
-// Ollama tags for Gemma 3. Sizes are the 4-bit quantized variants Ollama
-// ships by default; check `ollama show <tag>` for current numbers.
+// Ollama tags. Sizes are the default quantized variants Ollama ships;
+// run `ollama show <tag>` for current numbers.
 export const AVAILABLE_MODELS: ModelInfo[] = [
+  {
+    name: 'gemma4:latest',
+    label: 'Gemma 4 8B',
+    size: '9.6 GB',
+    sizeBytes: 9_600_000_000,
+    description: 'Latest Gemma. Q4_K_M, multimodal. 16GB+ RAM recommended.',
+    recommended: true
+  },
   {
     name: 'gemma3:1b',
     label: 'Gemma 3 1B',
@@ -104,8 +112,7 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
     label: 'Gemma 3 4B',
     size: '3.3 GB',
     sizeBytes: 3_300_000_000,
-    description: 'Best all-rounder. Text + vision. Runs on 8GB+ RAM.',
-    recommended: true
+    description: 'Compact all-rounder. Text + vision. Runs on 8GB+ RAM.'
   },
   {
     name: 'gemma3:12b',
@@ -123,5 +130,5 @@ export const AVAILABLE_MODELS: ModelInfo[] = [
   }
 ]
 
-export const DEFAULT_MODEL = 'gemma3:4b'
+export const DEFAULT_MODEL = 'gemma4:latest'
 

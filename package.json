@@ -2,7 +2,7 @@
   "name": "gemma-chat",
   "version": "0.1.0-win.1",
   "description": "Local AI chat + coding agent for Windows, powered by Gemma 3 via Ollama",
-  "main": "./out/main/index.js",
+  "main": "./out/main/index.cjs",
   "author": "Ammaar (Windows port by revdarkness)",
   "license": "MIT",
   "type": "module",
