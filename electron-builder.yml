@@ -19,6 +19,23 @@ mac:
   category: public.app-category.productivity
   hardenedRuntime: true
   gatekeeperAssess: false
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  # No code-signing by default — set CSC_LINK / CSC_KEY_PASSWORD in your
+  # environment if you have a signing cert. Without a cert, SmartScreen will
+  # warn on first launch; that's normal for unsigned community builds.
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: Gemma Chat
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
 dmg:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
