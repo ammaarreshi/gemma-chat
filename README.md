@@ -2,7 +2,7 @@
   <img src="gemma-extruded-app.png" alt="Gemma Chat" width="180" />
 </p>
 
-<h1 align="center">Gemma Chat — Windows Edition</h1>
+<h1 align="center">Gemma Chat - (For Windows)</h1>
 
 <p align="center">
   <strong>Vibe code without the internet.</strong><br/>
