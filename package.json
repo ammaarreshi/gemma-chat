@@ -3,7 +3,10 @@
   "version": "0.1.0-win.1",
   "description": "Local AI chat + coding agent for Windows, powered by Gemma 3 via Ollama",
   "main": "./out/main/index.cjs",
-  "author": "Ammaar (Windows port by revdarkness)",
+  "author": {
+    "name": "Ammaar (Windows port by revdarkness)",
+    "email": "14030456+revdarkness@users.noreply.github.com"
+  },
   "license": "MIT",
   "type": "module",
   "scripts": {
