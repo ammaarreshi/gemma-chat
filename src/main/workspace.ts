@@ -327,8 +327,32 @@ export interface BashResult {
   durationMs: number
 }
 
-const BASH_DENY =
-  /\b(rm\s+-rf\s+\/|sudo|:\(\)\s*\{|chmod\s+777\s+\/|mkfs|dd\s+if=|shutdown|reboot)/i
+// Cross-platform deny list. Covers the most common destructive shapes on
+// both POSIX shells and Windows cmd/PowerShell. Not exhaustive — the
+// workspace itself is sandboxed under userData, so the goal is to block
+// obvious system-level damage, not to be a complete jail.
+const SHELL_DENY = new RegExp(
+  [
+    // POSIX
+    'rm\\s+-rf\\s+/',
+    'sudo',
+    ':\\(\\)\\s*\\{',
+    'chmod\\s+777\\s+/',
+    'mkfs',
+    'dd\\s+if=',
+    'shutdown',
+    'reboot',
+    // Windows cmd
+    '\\bformat\\s+[a-z]:',
+    '\\bdel\\s+/[fsq]\\s+/[fsq]?\\s*[a-z]:',
+    '\\brd\\s+/s\\s+/q\\s+[a-z]:',
+    // PowerShell
+    'Remove-Item\\s+-Recurse\\s+-Force\\s+[a-z]:',
+    'Stop-Computer',
+    'Restart-Computer'
+  ].join('|'),
+  'i'
+)
 
 export async function wsRunBash(
   conversationId: string,
@@ -336,16 +360,39 @@ export async function wsRunBash(
   timeoutMs = 60_000,
   maxBytes = 16_000
 ): Promise<BashResult> {
-  if (BASH_DENY.test(command)) {
+  if (SHELL_DENY.test(command)) {
     throw new Error('Blocked by safety policy: command contains a denied pattern.')
   }
   const base = await ensureWorkspace(conversationId)
   const start = Date.now()
 
+  // Pick the shell appropriate for the platform.
+  //   Windows: PowerShell (modern, installed by default since Win7) with -Command
+  //   POSIX:   /bin/bash -lc
+  // If the user has installed Git Bash and prefers it on Windows, they can
+  // set GEMMA_SHELL=bash and we'll honor that (Git Bash ships bash.exe).
+  const isWin = process.platform === 'win32'
+  const shellOverride = process.env.GEMMA_SHELL
+  let shell: string
+  let args: string[]
+  if (shellOverride === 'bash') {
+    shell = 'bash'
+    args = ['-lc', command]
+  } else if (isWin) {
+    shell = 'powershell.exe'
+    args = ['-NoProfile', '-NonInteractive', '-Command', command]
+  } else {
+    shell = '/bin/bash'
+    args = ['-lc', command]
+  }
+
   return new Promise((resolve) => {
-    const proc = spawn('/bin/bash', ['-lc', command], {
+    const proc = spawn(shell, args, {
       cwd: base,
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' }
+      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      // On Windows, spawn() with a shell name (no .exe extension) needs
+      // shell: true OR an explicit .exe; we're explicit above so this is fine.
+      windowsHide: true
     })
     let stdout = ''
     let stderr = ''

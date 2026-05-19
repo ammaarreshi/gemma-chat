@@ -1,9 +1,12 @@
 {
   "name": "gemma-chat",
-  "version": "0.1.0",
-  "description": "Local AI chat on your Mac, powered by Gemma 3",
-  "main": "./out/main/index.js",
-  "author": "Ammaar",
+  "version": "0.1.0-win.1",
+  "description": "Local AI chat + coding agent for Windows, powered by Gemma 3 via Ollama",
+  "main": "./out/main/index.cjs",
+  "author": {
+    "name": "Ammaar (Windows port by revdarkness)",
+    "email": "14030456+revdarkness@users.noreply.github.com"
+  },
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -12,6 +15,10 @@
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --dir",
     "dist": "electron-vite build && electron-builder",
+    "dist:win": "electron-vite build && electron-builder --win",
+    "dist:mac": "electron-vite build && electron-builder --mac",
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dist:linux:arm64": "electron-vite build && electron-builder --linux --arm64",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "typecheck": "npm run typecheck:node && npm run typecheck:web"

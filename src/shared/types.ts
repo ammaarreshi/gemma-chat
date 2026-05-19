@@ -1,6 +1,7 @@
 export type SetupStage =
   | 'checking'
-  | 'installing-mlx'
+  // Kept as 'starting-mlx' to preserve the IPC contract with the renderer's
+  // StageList. Semantically this is now "warming Ollama model into memory".
   | 'starting-mlx'
   | 'downloading-model'
   | 'ready'
@@ -78,7 +79,7 @@ export type StreamChunk =
   | { type: 'error'; error: string }
 
 export interface ModelInfo {
-  /** HuggingFace repo ID — used internally for mlx_lm */
+  /** Ollama model tag — used as the model identifier in API calls */
   name: string
   /** Short, user-friendly display name */
   label: string
@@ -88,37 +89,46 @@ export interface ModelInfo {
   recommended?: boolean
 }
 
+// Ollama tags. Sizes are the default quantized variants Ollama ships;
+// run `ollama show <tag>` for current numbers.
 export const AVAILABLE_MODELS: ModelInfo[] = [
   {
-    name: 'mlx-community/gemma-4-e2b-it-4bit',
-    label: 'Gemma 4 E2B',
-    size: '1.5 GB',
-    sizeBytes: 1_500_000_000,
-    description: 'Edge-sized. Fast & lightweight. Text + image + audio. Runs on 8GB+ Macs.'
-  },
-  {
-    name: 'mlx-community/gemma-4-e4b-it-4bit',
-    label: 'Gemma 4 E4B',
-    size: '3 GB',
-    sizeBytes: 3_000_000_000,
-    description: 'Best all-rounder. Text + image + audio. Runs on 8GB+ Macs.',
+    name: 'gemma4:latest',
+    label: 'Gemma 4 8B',
+    size: '9.6 GB',
+    sizeBytes: 9_600_000_000,
+    description: 'Latest Gemma. Q4_K_M, multimodal. 16GB+ RAM recommended.',
     recommended: true
   },
   {
-    name: 'mlx-community/gemma-4-26b-a4b-it-4bit',
-    label: 'Gemma 4 27B MoE',
-    size: '16 GB',
-    sizeBytes: 16_000_000_000,
-    description: 'Mixture-of-Experts (26B, 4B active). 16GB+ RAM recommended.'
+    name: 'gemma3:1b',
+    label: 'Gemma 3 1B',
+    size: '815 MB',
+    sizeBytes: 815_000_000,
+    description: 'Tiny. Fast on any modern PC, even without a discrete GPU. Text only.'
   },
   {
-    name: 'mlx-community/gemma-4-31b-it-4bit',
-    label: 'Gemma 4 31B',
-    size: '18 GB',
-    sizeBytes: 18_000_000_000,
-    description: 'Frontier dense model. Best quality. 32GB+ RAM recommended.'
+    name: 'gemma3:4b',
+    label: 'Gemma 3 4B',
+    size: '3.3 GB',
+    sizeBytes: 3_300_000_000,
+    description: 'Compact all-rounder. Text + vision. Runs on 8GB+ RAM.'
+  },
+  {
+    name: 'gemma3:12b',
+    label: 'Gemma 3 12B',
+    size: '8.1 GB',
+    sizeBytes: 8_100_000_000,
+    description: 'Stronger reasoning. Text + vision. 16GB+ RAM recommended.'
+  },
+  {
+    name: 'gemma3:27b',
+    label: 'Gemma 3 27B',
+    size: '17 GB',
+    sizeBytes: 17_000_000_000,
+    description: 'Maximum quality. Text + vision. 32GB+ RAM (or a beefy GPU) recommended.'
   }
 ]
 
-export const DEFAULT_MODEL = 'mlx-community/gemma-4-e4b-it-4bit'
+export const DEFAULT_MODEL = 'gemma4:latest'
 

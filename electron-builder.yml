@@ -19,6 +19,49 @@ mac:
   category: public.app-category.productivity
   hardenedRuntime: true
   gatekeeperAssess: false
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+  # No code-signing by default — set CSC_LINK / CSC_KEY_PASSWORD in your
+  # environment if you have a signing cert. Without a cert, SmartScreen will
+  # warn on first launch; that's normal for unsigned community builds.
+  signAndEditExecutable: false
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: Gemma Chat
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+linux:
+  icon: build/icon.png
+  category: Utility
+  synopsis: Local AI chat + coding agent powered by Gemma via Ollama
+  desktop:
+    StartupNotify: 'true'
+    Encoding: UTF-8
+    MimeType: x-scheme-handler/gemma-chat
+  target:
+    # AppImage = universal Linux binary; .deb = Debian/Ubuntu/Pi OS.
+    # arm64 .deb is the right artifact for Raspberry Pi 5 / Pi 4 64-bit.
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64, arm64]
+appImage:
+  artifactName: ${name}-${version}-${arch}.${ext}
+deb:
+  artifactName: ${name}_${version}_${arch}.${ext}
+  # Ollama itself isn't a hard apt dependency — it's installed separately
+  # via https://ollama.com/download/linux. Listing it here would make apt
+  # try (and fail) to resolve a package name that's not in the Debian repos.
+  depends:
+    - libnotify4
+    - libxtst6
+    - libnss3
 dmg:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false

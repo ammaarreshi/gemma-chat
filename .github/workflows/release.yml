@@ -1,0 +1,143 @@
+name: Release
+
+# Triggers:
+#   - Push a tag like v0.1.0 / v0.2.0-rc.1 → build all 3 platforms and publish
+#     a GitHub Release with the artifacts attached.
+#   - workflow_dispatch (manual button in the Actions tab) → builds only,
+#     no release. Useful for sanity-checking the matrix without cutting a tag.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed by softprops/action-gh-release to create the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+            artifact_glob: |
+              dist/*.exe
+              dist/*.exe.blockmap
+              dist/latest*.yml
+          - os: ubuntu-latest
+            script: dist:linux
+            artifact_glob: |
+              dist/*.AppImage
+              dist/*.deb
+              dist/latest*.yml
+          - os: macos-latest
+            script: dist:mac
+            artifact_glob: |
+              dist/*.dmg
+              dist/*.dmg.blockmap
+              dist/latest*.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # Linux .deb packaging requires fakeroot; preinstalled on ubuntu-latest
+      # but listed explicitly so a future runner image change doesn't bite us.
+      - name: Install Linux build deps
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update && sudo apt-get install -y fakeroot dpkg rpm
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build (${{ matrix.script }})
+        env:
+          # electron-builder publish disable: we attach artifacts manually
+          # in the release job below, so don't try to publish from inside
+          # the build step.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # No code-signing credentials wired up. Builds are unsigned; users
+          # on Windows will see SmartScreen warning, macOS users will see
+          # Gatekeeper. Add CSC_LINK / CSC_KEY_PASSWORD secrets later to
+          # enable signing.
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run ${{ matrix.script }} -- --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gemma-chat-${{ matrix.os }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    # Only publish a release on tag pushes, not on workflow_dispatch.
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for release notes generation)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.blockmap' -o -name 'latest*.yml' \) -exec cp -v {} release/ \;
+          ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            ## Gemma Chat ${{ github.ref_name }}
+
+            Local AI chat + coding agent for **Windows, Linux, and Raspberry Pi**, powered by Gemma 3 / 4 via [Ollama](https://ollama.com/).
+
+            ### Downloads
+
+            | Platform | File |
+            |---|---|
+            | Windows 10 / 11 (x64) | `gemma-chat-*-setup.exe` |
+            | Linux x64 (any distro) | `gemma-chat-*-x86_64.AppImage` |
+            | Debian / Ubuntu / Mint (x64) | `gemma-chat_*_amd64.deb` |
+            | Raspberry Pi 5 / Pi 4 64-bit OS | `gemma-chat_*_arm64.deb` |
+            | macOS Apple Silicon | `gemma-chat-*.dmg` |
+
+            ### Prerequisites
+
+            Install [Ollama](https://ollama.com/download) first. Then launch Gemma Chat — first run will pull the model from the Ollama registry. See the [README](https://github.com/revdarkness/gemma-chat#readme) for full setup.
+
+            **Note:** installers are not code-signed. Windows SmartScreen and macOS Gatekeeper will warn on first launch; click "More info" → "Run anyway" / right-click → Open. This is normal for community builds.

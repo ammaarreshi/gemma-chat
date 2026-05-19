@@ -3,15 +3,13 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { AVAILABLE_MODELS } from '@shared/types'
 import {
-  locateMLX,
-  installMLX,
-  startServer,
-  stopServer,
-  hasModel,
+  locateOllama,
+  pullModel,
+  warmModel,
   chatStream,
   listLocalModels,
-  type MLXChatMessage
-} from './mlx'
+  type OllamaChatMessage
+} from './ollama'
 import {
   TOOLS,
   chatSystemPrompt,
@@ -37,6 +35,11 @@ import type { ChatRequest, StreamChunk, ToolCall } from '../shared/types'
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const isMac = process.platform === 'darwin'
+  const iconPath = process.platform === 'win32'
+    ? join(__dirname, '../../build/icon.ico')
+    : join(__dirname, '../../build/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -45,13 +48,19 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0e0e0e',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 14, y: 14 },
-    vibrancy: 'under-window',
-    visualEffectState: 'active',
-    icon: join(__dirname, '../../build/icon.png'),
+    // Mac-only chrome (hidden title bar + vibrancy). On Windows we use the
+    // standard frame so the window has a proper close/min/max button row.
+    ...(isMac
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          trafficLightPosition: { x: 14, y: 14 },
+          vibrancy: 'under-window' as const,
+          visualEffectState: 'active' as const
+        }
+      : {}),
+    icon: iconPath,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
+      preload: join(__dirname, '../preload/index.cjs'),
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false
@@ -81,54 +90,37 @@ function send(channel: string, payload: unknown): void {
   mainWindow?.webContents.send(channel, payload)
 }
 
-let mlxPython: string | null = null
-
-async function ensureMLXRunning(model: string): Promise<string> {
-  let mlx = locateMLX()
-  if (!mlx) {
+async function ensureOllamaRunning(model: string): Promise<void> {
+  const status = await locateOllama()
+  if (!status.running) {
     throw new Error(
-      'Python 3.10–3.13 not found. Install via Homebrew: brew install python@3.13'
+      'Ollama is not running. Install it from https://ollama.com/download/windows and make sure the Ollama service is started, then try again.'
     )
   }
 
-  let pythonToUse = mlx.python
-
-  if (!mlx.installed) {
-    send('setup:status', {
-      stage: 'installing-mlx',
-      message: 'Installing MLX runtime…'
-    })
-    // installMLX creates the venv and returns the venv python path
-    pythonToUse = await installMLX((p) => {
-      send('setup:status', {
-        stage: 'installing-mlx',
-        message: p.message
-      })
-    })
-  }
-
-  mlxPython = pythonToUse
-
   const label = AVAILABLE_MODELS.find((m) => m.name === model)?.label ?? model
-  send('setup:status', { stage: 'starting-mlx', message: 'Starting model runtime…' })
   send('setup:status', {
     stage: 'downloading-model',
-    message: `Loading ${label}… (first run downloads the model)`
+    message: `Pulling ${label}… (first run downloads the model from ollama.com)`
   })
-  await startServer(pythonToUse, model, (p) => {
+  await pullModel(model, (p) => {
     send('setup:status', {
       stage: 'downloading-model',
       message: p.message,
-      progress: p.progress
+      progress: p.progress,
+      bytesDone: p.bytesDone,
+      bytesTotal: p.bytesTotal
     })
   })
-  return pythonToUse
+
+  send('setup:status', { stage: 'starting-mlx', message: 'Warming up model…' })
+  await warmModel(model)
 }
 
 async function handleSetup(model: string): Promise<void> {
   try {
-    send('setup:status', { stage: 'checking', message: 'Checking system…' })
-    await ensureMLXRunning(model)
+    send('setup:status', { stage: 'checking', message: 'Checking Ollama…' })
+    await ensureOllamaRunning(model)
     send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
   } catch (e) {
     send('setup:status', {
@@ -158,7 +150,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
   const emit = (chunk: StreamChunk): void => send(channel, chunk)
 
   try {
-    const baseMessages: MLXChatMessage[] = []
+    const baseMessages: OllamaChatMessage[] = []
 
     if (req.mode === 'code') {
       const wsPath = await ensureWorkspace(req.conversationId)
@@ -169,7 +161,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
     }
 
     for (const m of req.messages) {
-      baseMessages.push({ role: m.role as MLXChatMessage['role'], content: m.content })
+      baseMessages.push({ role: m.role as OllamaChatMessage['role'], content: m.content })
       if (m.toolCalls) {
         for (const tc of m.toolCalls) {
           if (tc.result != null) {
@@ -483,17 +475,16 @@ app.whenReady().then(async () => {
       message: `Switching to ${label}…`
     })
     try {
-      await stopServer()
-      if (!mlxPython) {
-        throw new Error('MLX Python path not available. Please restart the app.')
-      }
-      await startServer(mlxPython, model, (p) => {
+      await pullModel(model, (p) => {
         send('setup:status', {
           stage: 'downloading-model',
           message: p.message,
-          progress: p.progress
+          progress: p.progress,
+          bytesDone: p.bytesDone,
+          bytesTotal: p.bytesTotal
         })
       })
+      await warmModel(model)
       send('setup:status', { stage: 'ready', message: 'Ready to chat.' })
     } catch (e) {
       send('setup:status', {
@@ -505,8 +496,8 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('setup:status', async () => {
-    const mlx = locateMLX()
-    return { hasMLX: !!(mlx && mlx.installed) }
+    const status = await locateOllama()
+    return { ollamaRunning: status.running, ollamaVersion: status.version }
   })
 
   ipcMain.handle('models:list-local', async () => {
@@ -570,15 +561,14 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // On macOS, keep the app alive in the dock so reopening is instant and the
-  // MLX subprocess + workspace server stay warm. Only non-darwin platforms
-  // quit on last-window-close.
+  // On macOS keep the app alive in the dock; on Windows/Linux quit normally.
   if (process.platform !== 'darwin') {
     app.quit()
   }
 })
 
 app.on('before-quit', () => {
-  stopServer()
+  // The Ollama daemon is a shared system service; leave it alone so other
+  // clients keep working and the model stays warm for next launch.
   stopWorkspaceServer()
 })
