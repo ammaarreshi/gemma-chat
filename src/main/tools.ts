@@ -1,3 +1,4 @@
+import { parallelTool, searchProvider } from './parallel'
 import {
   wsWriteFile,
   wsReadFile,
@@ -11,6 +12,8 @@ import {
 
 export interface ToolContext {
   conversationId: string
+  signal?: AbortSignal
+  modelName?: string
   onFileChange?: () => void
 }
 
@@ -26,9 +29,12 @@ export interface ToolSpec {
 const UA =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
-async function webSearch(args: Record<string, unknown>): Promise<string> {
+async function webSearch(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   const query = String(args.query ?? '').trim()
   if (!query) return 'Error: missing query'
+  if (searchProvider() === 'parallel') {
+    return parallelTool('web_search', { objective: query, search_queries: [query] }, ctx)
+  }
   const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`
   const res = await fetch(url, { headers: { 'user-agent': UA, accept: 'text/html' } })
   if (!res.ok) return `Search failed: ${res.status} ${res.statusText}`
@@ -81,10 +87,13 @@ function stripTags(s: string): string {
     .trim()
 }
 
-async function fetchUrl(args: Record<string, unknown>): Promise<string> {
+async function fetchUrl(args: Record<string, unknown>, ctx: ToolContext): Promise<string> {
   const url = String(args.url ?? '').trim()
   if (!url) return 'Error: missing url'
   if (!/^https?:\/\//.test(url)) return 'Error: url must be http(s)'
+  if (searchProvider() === 'parallel') {
+    return parallelTool('web_fetch', { urls: [url] }, ctx)
+  }
   try {
     const res = await fetch(url, { headers: { 'user-agent': UA } })
     if (!res.ok) return `Fetch failed: ${res.status} ${res.statusText}`
@@ -259,7 +268,7 @@ async function openPreview(_args: Record<string, unknown>, ctx: ToolContext): Pr
 export const TOOLS: Record<string, ToolSpec> = {
   web_search: {
     name: 'web_search',
-    description: 'Search the web via DuckDuckGo. Returns a numbered list of results.',
+    description: 'Search the web. Returns results with source URLs.',
     params: [{ name: 'query', description: 'what to search for', required: true }],
     example:
       '<action name="web_search">\n<query>latest tensorflow release notes</query>\n</action>',
@@ -268,7 +277,7 @@ export const TOOLS: Record<string, ToolSpec> = {
   },
   fetch_url: {
     name: 'fetch_url',
-    description: 'Fetch a web page and return its text content (truncated to ~8KB).',
+    description: 'Fetch a web page and return text or relevant excerpts (truncated to ~8KB).',
     params: [{ name: 'url', description: 'absolute http(s) URL', required: true }],
     example: '<action name="fetch_url">\n<url>https://example.com</url>\n</action>',
     mode: 'both',
@@ -583,11 +592,13 @@ export async function runTool(
   args: Record<string, unknown>,
   ctx: ToolContext
 ): Promise<string> {
+  ctx.signal?.throwIfAborted()
   const tool = TOOLS[name]
   if (!tool) return `Error: unknown tool "${name}". Available: ${Object.keys(TOOLS).join(', ')}`
   try {
     return await tool.run(args, ctx)
   } catch (e) {
+    if (ctx.signal?.aborted) throw ctx.signal.reason
     return `Error running ${name}: ${(e as Error).message}`
   }
 }

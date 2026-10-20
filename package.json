@@ -14,12 +14,14 @@
     "dist": "electron-vite build && electron-builder",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web"
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "vitest run"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@huggingface/transformers": "^4.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "electron-updater": "^6.3.9",
     "highlight.js": "^11.11.1",
     "marked": "^15.0.7"
@@ -39,6 +41,7 @@
     "react-dom": "^19.0.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
-    "vite": "^6.0.11"
+    "vite": "^6.0.11",
+    "vitest": "^3.2.7"
   }
 }

@@ -64,6 +64,35 @@ First launch will auto-detect Python → create a venv → install MLX-LM → do
 
 > **Tip:** Install Python via Homebrew if you don't have it: `brew install python@3.13`
 
+### Optional online search with Parallel
+
+DuckDuckGo search and direct URL fetching remain the defaults. To use
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) for the
+existing `web_search` and `fetch_url` tools in Chat and Build mode, launch from
+Terminal with:
+
+```bash
+GEMMA_SEARCH_PROVIDER=parallel npm run dev
+```
+
+For a packaged app, quit Gemma Chat first, then run:
+
+```bash
+GEMMA_SEARCH_PROVIDER=parallel /Applications/Gemma\ Chat.app/Contents/MacOS/Gemma\ Chat
+```
+
+Parallel provides free search using Fast mode and page excerpts with no account
+or API key. It requires internet access and has usage limits. Only queries and
+requested URLs are sent to Parallel, along with the selected model identifier
+and an opaque conversation ID. Model inference still runs locally. Conversation
+IDs stay stable across related search and fetch calls during the app run; a new
+chat gets a new ID. Requests time out after 20 seconds and Stop cancels them.
+Errors are returned to the agent without switching providers.
+
+Unset `GEMMA_SEARCH_PROVIDER` or set it to `duckduckgo` to restore the defaults.
+Offline coding and chat do not require either search service. Tool-disabled Chat
+requests do not invoke search.
+
 ### Building a Distributable
 
 ```bash

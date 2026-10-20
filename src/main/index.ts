@@ -7,7 +7,6 @@ import {
   installMLX,
   startServer,
   stopServer,
-  hasModel,
   chatStream,
   listLocalModels,
   type MLXChatMessage
@@ -184,6 +183,8 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
 
     const ctx: ToolContext = {
       conversationId: req.conversationId,
+      signal: abort.signal,
+      modelName: req.model,
       onFileChange: () => send('workspace:changed', { conversationId: req.conversationId })
     }
 
@@ -193,6 +194,7 @@ async function handleChat(req: ChatRequest, channel: string): Promise<void> {
     emit({ type: 'activity', activity: { kind: 'thinking', chars: 0 } })
 
     for (let round = 0; round < maxRounds; round++) {
+      abort.signal.throwIfAborted()
       let buffer = ''
       let emittedIdx = 0
       let firstToken = true
